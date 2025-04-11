@@ -1,4 +1,4 @@
-# app/utils/metrics.py
+# app/utils/metrics.py (updated)
 import psutil
 import subprocess
 from typing import Dict, List
@@ -27,10 +27,16 @@ class MetricsCollector:
             
             if result.returncode == 0:
                 values = [v.strip() for v in result.stdout.strip().split(',')]
+                
+                # Convert memory values to MB for consistent handling
+                # nvidia-smi returns memory in MiB by default
+                gpu_memory_used = float(values[1])  # Already in MiB
+                gpu_memory_total = float(values[2])  # Already in MiB
+                
                 metrics = {
                     'gpu_utilization': float(values[0]),
-                    'gpu_memory_used': float(values[1]),
-                    'gpu_memory_total': float(values[2]),
+                    'gpu_memory_used': gpu_memory_used,
+                    'gpu_memory_total': gpu_memory_total,
                     'gpu_temp': float(values[3]),
                     'power_draw': float(values[4]),
                     'sm_clock': float(values[5]),
