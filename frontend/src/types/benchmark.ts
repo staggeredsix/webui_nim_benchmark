@@ -5,11 +5,14 @@ export interface BenchmarkConfig {
   max_tokens?: number;
   prompt: string;
   name: string;
-  model_id: string;
+  model_id?: string;  // For Ollama models
+  nim_id?: string;    // For NIM containers
+  gpu_count?: number; // For NIM GPU allocation
   stream?: boolean;
   temperature?: number;
   top_p?: number;
   top_k?: number;
+  description?: string;
 }
 
 export interface BenchmarkMetrics {
