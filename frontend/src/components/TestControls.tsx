@@ -3,16 +3,19 @@ import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { AlertCircle, Plus, X } from 'lucide-react';
 import LogViewer from '@/components/LogViewer';
-import { startBenchmark, getNims, saveLogs, fetchBenchmarkHistory } from "@/services/api";
+import { startBenchmark, getModels, saveLogs, fetchBenchmarkHistory } from "@/services/api";
 import { formatNumber } from '@/utils/format';
 import type { BenchmarkConfig, BenchmarkRun } from '@/types/benchmark';
+import type { OllamaModel } from '@/types/model';
 import BenchmarkHistory from '@/components/BenchmarkHistory';
 
-interface NimConfig {
-  nim_id: string;
-  gpu_count: number;
-  customPrompt?: string;
+interface ModelConfig {
+  model_id: string;
   streaming: boolean;
+  customPrompt?: string;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
 }
 
 const TestControls = () => {
@@ -22,42 +25,41 @@ const TestControls = () => {
     total_requests: 100,
     concurrency_level: 10,
     max_tokens: 50,
-    prompt: '',
+    prompt: 'Write a short story about artificial intelligence.',
   });
 
-  const [nimConfigs, setNimConfigs] = useState<NimConfig[]>([{
-    nim_id: '',
-    gpu_count: 1,
+  const [modelConfigs, setModelConfigs] = useState<ModelConfig[]>([{
+    model_id: '',
     streaming: true,
+    temperature: 0.7,
+    top_p: 0.9,
+    top_k: 40,
   }]);
 
-  const [nims, setNims] = useState([]);
+  const [models, setModels] = useState<OllamaModel[]>([]);
   const [error, setError] = useState('');
-  const [containerStatus, setContainerStatus] = useState('');
-  const [activeContainer, setActiveContainer] = useState<string | null>(null);
-  const [isContainerRunning, setIsContainerRunning] = useState(false);
+  const [runningStatus, setRunningStatus] = useState('');
+  const [activeRun, setActiveRun] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
   const [currentBenchmark, setCurrentBenchmark] = useState(null);
   const [metrics, setMetrics] = useState(null);
   const [benchmarkHistory, setBenchmarkHistory] = useState<BenchmarkRun[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
-    loadNims();
+    loadModels();
     loadBenchmarkHistory();
-    const interval = setInterval(loadNims, 5000);
+    const interval = setInterval(loadBenchmarkHistory, 10000); // Refresh history every 10 seconds
     return () => clearInterval(interval);
   }, []);
 
-  const loadNims = async () => {
+  const loadModels = async () => {
     try {
-      const nimData = await getNims();
-      setNims(nimData);
-      if (activeContainer) {
-        const activeNim = nimData.find(nim => nim.container_id === activeContainer);
-        setIsContainerRunning(activeNim?.status === 'running');
-      }
+      const modelList = await getModels();
+      setModels(modelList);
     } catch (err) {
-      console.error("Error loading NIMs:", err);
-      setError("Failed to load NIMs");
+      console.error("Error loading models:", err);
+      setError("Failed to load models. Make sure Ollama is running.");
     }
   };
 
@@ -70,58 +72,68 @@ const TestControls = () => {
     }
   };
 
-  const addNim = () => {
-    setNimConfigs([...nimConfigs, {
-      nim_id: '',
-      gpu_count: 1,
+  const addModel = () => {
+    setModelConfigs([...modelConfigs, {
+      model_id: '',
       streaming: true,
+      temperature: 0.7,
+      top_p: 0.9,
+      top_k: 40,
     }]);
   };
 
-  const updateNim = (index: number, config: Partial<NimConfig>) => {
-    const newConfigs = [...nimConfigs];
+  const updateModel = (index: number, config: Partial<ModelConfig>) => {
+    const newConfigs = [...modelConfigs];
     newConfigs[index] = { ...newConfigs[index], ...config };
-    setNimConfigs(newConfigs);
+    setModelConfigs(newConfigs);
   };
 
-  const removeNim = (index: number) => {
-    setNimConfigs(nimConfigs.filter((_, i) => i !== index));
+  const removeModel = (index: number) => {
+    setModelConfigs(modelConfigs.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setContainerStatus('Starting benchmarks...');
+    setRunningStatus('Starting benchmarks...');
+    setIsRunning(true);
 
-    for (const nimConfig of nimConfigs) {
+    for (const modelConfig of modelConfigs) {
       try {
         if (!baseConfig.name.trim()) {
           setError('Please provide a benchmark name');
+          setIsRunning(false);
+          setRunningStatus('');
           return;
         }
 
-        if (!nimConfig.nim_id) {
-          setError('Please select a NIM');
+        if (!modelConfig.model_id) {
+          setError('Please select a model');
+          setIsRunning(false);
+          setRunningStatus('');
           return;
         }
 
         const fullConfig: BenchmarkConfig = {
           ...baseConfig,
-          nim_id: nimConfig.nim_id,
-          gpu_count: nimConfig.gpu_count,
-          prompt: nimConfig.customPrompt || baseConfig.prompt,
-          name: `${baseConfig.name}_${nims.find(n => n.container_id === nimConfig.nim_id)?.image_name.split('/').pop()}`,
-          stream: nimConfig.streaming,
+          model_id: modelConfig.model_id,
+          prompt: modelConfig.customPrompt || baseConfig.prompt,
+          name: `${baseConfig.name}_${models.find(m => m.name === modelConfig.model_id)?.name || modelConfig.model_id}`,
+          stream: modelConfig.streaming,
+          temperature: modelConfig.temperature,
+          top_p: modelConfig.top_p,
+          top_k: modelConfig.top_k,
         };
 
         setCurrentBenchmark(fullConfig);
-        setContainerStatus(`Running benchmark for ${fullConfig.name}...`);
+        setRunningStatus(`Running benchmark for ${fullConfig.name}...`);
         
         const response = await startBenchmark(fullConfig);
-        setActiveContainer(response.container_id);
+        setActiveRun(response.run_id);
 
-        await new Promise(resolve => setTimeout(resolve, 30000));
-        setContainerStatus('Waiting for GPU memory to clear...');
+        // Wait for benchmark to complete
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        setRunningStatus('Processing results...');
         
         await loadBenchmarkHistory();
 
@@ -132,18 +144,15 @@ const TestControls = () => {
       }
     }
 
-    setContainerStatus('');
+    setRunningStatus('');
+    setIsRunning(false);
     setCurrentBenchmark(null);
   };
 
   const handleSaveLogs = async (filename: string) => {
-    if (!activeContainer) return;
-    try {
-      await saveLogs(activeContainer, filename);
-    } catch (err) {
-      console.error("Error saving logs:", err);
-      setError("Failed to save logs");
-    }
+    // For Ollama, we don't have container logs, but we could implement a similar
+    // function to save benchmark results to a file
+    // This is just a placeholder
   };
 
   return (
@@ -162,12 +171,13 @@ const TestControls = () => {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm mb-1">Name</label>
+              <label className="block text-sm mb-1">Benchmark Name</label>
               <input
                 type="text"
                 value={baseConfig.name}
                 onChange={e => setBaseConfig({...baseConfig, name: e.target.value})}
                 className="w-full bg-gray-700 rounded p-2"
+                placeholder="My benchmark run"
               />
             </div>
 
@@ -215,42 +225,29 @@ const TestControls = () => {
             </div>
 
             <div className="space-y-4">
-              {nimConfigs.map((nim, index) => (
+              {modelConfigs.map((model, index) => (
                 <div key={index} className="bg-gray-700/50 p-4 rounded-lg">
                   <div className="flex items-center gap-4">
                     <div className="flex-1">
-                      <label className="block text-sm mb-1">Select NIM</label>
+                      <label className="block text-sm mb-1">Select Model</label>
                       <select 
-                        value={nim.nim_id}
-                        onChange={e => updateNim(index, { nim_id: e.target.value })}
+                        value={model.model_id}
+                        onChange={e => updateModel(index, { model_id: e.target.value })}
                         className="w-full bg-gray-700 rounded p-2"
                       >
-                        <option value="">Select NIM</option>
-                        {nims.map(n => (
-                          <option key={n.container_id} value={n.container_id}>
-                            {n.image_name}
+                        <option value="">Select a model</option>
+                        {models.map(m => (
+                          <option key={m.name} value={m.name}>
+                            {m.name}
                           </option>
                         ))}
                       </select>
                     </div>
-                    
-                    <div>
-                      <label className="block text-sm mb-1">GPUs</label>
-                      <select
-                        value={nim.gpu_count}
-                        onChange={e => updateNim(index, { gpu_count: Number(e.target.value) })}
-                        className="w-full bg-gray-700 rounded p-2"
-                      >
-                        {[1,2,3,4].map(num => (
-                          <option key={num} value={num}>{num} GPU{num > 1 ? 's' : ''}</option>
-                        ))}
-                      </select>
-                    </div>
 
-                    {nimConfigs.length > 1 && (
+                    {modelConfigs.length > 1 && (
                       <button 
                         type="button"
-                        onClick={() => removeNim(index)}
+                        onClick={() => removeModel(index)}
                         className="mt-6 text-gray-400 hover:text-white"
                       >
                         <X className="w-5 h-5" />
@@ -263,8 +260,8 @@ const TestControls = () => {
                       <input
                         type="checkbox"
                         id={`streaming-${index}`}
-                        checked={nim.streaming}
-                        onChange={e => updateNim(index, { streaming: e.target.checked })}
+                        checked={model.streaming}
+                        onChange={e => updateModel(index, { streaming: e.target.checked })}
                         className="rounded bg-gray-700 border-gray-600"
                       />
                       <label htmlFor={`streaming-${index}`} className="text-sm">Enable streaming</label>
@@ -272,22 +269,69 @@ const TestControls = () => {
 
                     <button
                       type="button"
-                      onClick={() => updateNim(index, { 
-                        customPrompt: nim.customPrompt === undefined ? baseConfig.prompt : undefined 
+                      onClick={() => updateModel(index, { 
+                        customPrompt: model.customPrompt === undefined ? baseConfig.prompt : undefined 
                       })}
                       className="text-gray-400 hover:text-white text-sm"
                     >
-                      {nim.customPrompt === undefined ? "Add custom prompt" : "Remove custom prompt"}
+                      {model.customPrompt === undefined ? "Add custom prompt" : "Remove custom prompt"}
                     </button>
 
-                    {nim.customPrompt !== undefined && (
+                    {model.customPrompt !== undefined && (
                       <textarea
-                        value={nim.customPrompt}
-                        onChange={e => updateNim(index, { customPrompt: e.target.value })}
-                        placeholder="Enter custom prompt for this NIM..."
+                        value={model.customPrompt}
+                        onChange={e => updateModel(index, { customPrompt: e.target.value })}
+                        placeholder="Enter custom prompt for this model..."
                         className="w-full bg-gray-700 rounded p-2 text-sm"
                         rows={3}
                       />
+                    )}
+                    
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvanced(!showAdvanced)}
+                      className="text-blue-400 hover:text-blue-300 text-sm mt-2"
+                    >
+                      {showAdvanced ? "Hide advanced options" : "Show advanced options"}
+                    </button>
+                    
+                    {showAdvanced && (
+                      <div className="grid grid-cols-3 gap-2 mt-2 p-2 bg-gray-600/50 rounded">
+                        <div>
+                          <label className="block text-xs mb-1">Temperature</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="2"
+                            value={model.temperature || 0.7}
+                            onChange={e => updateModel(index, { temperature: Number(e.target.value) })}
+                            className="w-full bg-gray-700 rounded p-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs mb-1">Top P</label>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="1"
+                            value={model.top_p || 0.9}
+                            onChange={e => updateModel(index, { top_p: Number(e.target.value) })}
+                            className="w-full bg-gray-700 rounded p-1 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs mb-1">Top K</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={model.top_k || 40}
+                            onChange={e => updateModel(index, { top_k: Number(e.target.value) })}
+                            className="w-full bg-gray-700 rounded p-1 text-sm"
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -295,20 +339,20 @@ const TestControls = () => {
 
               <button
                 type="button"
-                onClick={addNim}
+                onClick={addModel}
                 className="flex items-center text-gray-400 hover:text-white"
               >
                 <Plus className="w-4 h-4 mr-2" />
-                Add another NIM to test
+                Add another model to test
               </button>
             </div>
 
             <button 
               type="submit"
-              disabled={!!containerStatus || !!activeContainer}
+              disabled={isRunning}
               className="w-full bg-green-600 hover:bg-green-700 py-2 px-4 rounded disabled:opacity-50"
             >
-              {containerStatus || (activeContainer ? "Benchmark Running..." : "Start Benchmarks")}
+              {runningStatus || (isRunning ? "Benchmark Running..." : "Start Benchmarks")}
             </button>
           </form>
         </div>
@@ -316,53 +360,60 @@ const TestControls = () => {
         <div className="space-y-6">
           <div className="bg-gray-800 p-6 rounded-lg">
             <h2 className="text-xl font-bold mb-4">Recent Benchmarks</h2>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={benchmarkHistory.slice(-10)}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis 
-                  dataKey="start_time"
-                  tick={{ fill: '#9CA3AF' }}
-                  tickFormatter={(val) => new Date(val).toLocaleTimeString()}
-                />
-                <YAxis 
-                  yAxisId="left"
-                  tick={{ fill: '#9CA3AF' }}
-                  label={{ value: 'Tokens/s', angle: -90, position: 'insideLeft' }}
-                />
-                <YAxis 
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fill: '#9CA3AF' }}
-                  label={{ value: 'Latency (ms)', angle: 90, position: 'insideRight' }}
-                />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#1F2937', border: 'none' }}
-                  labelFormatter={(val) => new Date(val).toLocaleString()}
-                />
-                <Legend />
-                <Line 
-                  yAxisId="left"
-                  type="monotone" 
-                  dataKey="metrics.tokens_per_second" 
-                  name="Tokens/s" 
-                  stroke="#10B981"
-                />
-                <Line 
-                  yAxisId="right"
-                  type="monotone" 
-                  dataKey="metrics.latency" 
-                  name="Latency" 
-                  stroke="#60A5FA"
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {benchmarkHistory.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={benchmarkHistory.slice(-10)}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="start_time"
+                    tick={{ fill: '#9CA3AF' }}
+                    tickFormatter={(val) => new Date(val).toLocaleTimeString()}
+                  />
+                  <YAxis 
+                    yAxisId="left"
+                    tick={{ fill: '#9CA3AF' }}
+                    label={{ value: 'Tokens/s', angle: -90, position: 'insideLeft' }}
+                  />
+                  <YAxis 
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fill: '#9CA3AF' }}
+                    label={{ value: 'Latency (ms)', angle: 90, position: 'insideRight' }}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#1F2937', border: 'none' }}
+                    labelFormatter={(val) => new Date(val).toLocaleString()}
+                  />
+                  <Legend />
+                  <Line 
+                    yAxisId="left"
+                    type="monotone" 
+                    dataKey="metrics.tokens_per_second" 
+                    name="Tokens/s" 
+                    stroke="#10B981"
+                  />
+                  <Line 
+                    yAxisId="right"
+                    type="monotone" 
+                    dataKey="metrics.latency" 
+                    name="Latency" 
+                    stroke="#60A5FA"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center py-10 text-gray-400">
+                <p>No benchmark data available yet</p>
+                <p className="text-sm">Run a benchmark to see results here</p>
+              </div>
+            )}
           </div>
 
           {metrics && (
             <div className="bg-gray-800 p-6 rounded-lg">
               <h2 className="text-xl font-bold mb-4">System Metrics</h2>
               <div className="grid grid-cols-2 gap-4">
-                {metrics.gpu_metrics.map((gpu, index) => (
+                {metrics.gpu_metrics && metrics.gpu_metrics.map((gpu, index) => (
                   <div key={index} className="bg-gray-700 p-4 rounded-lg">
                     <h3 className="font-medium mb-2">GPU {index}</h3>
                     <div className="space-y-2">
@@ -376,7 +427,7 @@ const TestControls = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Memory</span>
-                        <span>{gpu.gpu_memory_used}/{gpu.gpu_memory_total} GB</span>
+                        <span>{formatNumber(gpu.gpu_memory_used / 1024, 2)} / {formatNumber(gpu.gpu_memory_total / 1024, 2)} GB</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-400">Power</span>
@@ -387,21 +438,12 @@ const TestControls = () => {
                 ))}
               </div>
             </div>
-          )} 
+          )}
         </div>
       </div>
 
       {/* Benchmark History Section */}
       <BenchmarkHistory />
-
-      {activeContainer && (
-        <LogViewer 
-          containerId={activeContainer}
-          isContainerRunning={isContainerRunning}
-          onSaveLogs={handleSaveLogs}
-          gpuInfo={metrics?.gpu_metrics}
-        />
-      )}
     </div>
   );
 };
