@@ -9,6 +9,7 @@ const BenchmarkManagement: React.FC = () => {
   const [maxTokens, setMaxTokens] = useState(50);
   const [prompt, setPrompt] = useState("Translate the following text:");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [modelId, setModelId] = useState("");
 
   const handleStartBenchmark = async () => {
     setIsSubmitting(true);
@@ -18,9 +19,8 @@ const BenchmarkManagement: React.FC = () => {
       max_tokens: maxTokens,
       name: prompt,
       prompt: prompt,
-      nim_id: "",  // This should be selected by the user
-      gpu_count: 1,  // Default to 1 GPU
-      stream: true   // Default to streaming enabled
+      model_id: modelId,  // For Ollama models
+      stream: true       // Default to streaming enabled
     };
 
     try {
@@ -36,7 +36,6 @@ const BenchmarkManagement: React.FC = () => {
 
   return (
     <div className="bg-gray-800 p-6 rounded-lg space-y-4">
-      <h2 className="text-xl font-bold">Benchmark Management</h2>
       <h2 className="text-xl font-bold">Benchmark Management</h2>
 
       <div className="flex flex-col space-y-2">
@@ -70,6 +69,17 @@ const BenchmarkManagement: React.FC = () => {
             onChange={(e) => setMaxTokens(Number(e.target.value))}
             className="p-2 bg-gray-700 rounded"
             min={1}
+          />
+        </label>
+
+        <label className="flex flex-col">
+          <span>Model ID:</span>
+          <input
+            type="text"
+            value={modelId}
+            onChange={(e) => setModelId(e.target.value)}
+            className="p-2 bg-gray-700 rounded"
+            placeholder="Enter model ID"
           />
         </label>
 
