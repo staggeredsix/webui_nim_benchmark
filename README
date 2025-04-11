@@ -1,0 +1,106 @@
+# Ollama Benchmark Tool
+
+A comprehensive tool for benchmarking Ollama models, measuring performance metrics, and optimizing deployment configurations.
+
+## Features
+
+- **Model Management**: Search, download, and manage Ollama models
+- **Comprehensive Benchmarking**: Test models with configurable parameters
+- **Real-time Metrics**: Monitor GPU utilization, memory usage, temperature, and power consumption
+- **Performance Analytics**: Track tokens per second, latency, and efficiency metrics
+- **Historical Data**: Compare benchmark results across different models and configurations
+
+## Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- Ollama installed and running
+- NVIDIA GPU drivers (for GPU monitoring)
+
+## Quick Start
+
+### Running with Docker
+
+```bash
+# Build the Docker image
+docker build -t ollama-benchmark .
+
+# Run the container
+docker run -p 7000:7000 --gpus all ollama-benchmark
+```
+
+### Manual Setup
+
+1. Install Python dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+2. Install Node.js dependencies and build the frontend:
+
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+3. Start the application:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 7000
+```
+
+4. Open your browser to `http://localhost:7000`
+
+## Configuring Ollama
+
+By default, the benchmark tool connects to Ollama at `http://localhost:11434`. You can change this in the Settings page.
+
+Make sure Ollama is running before starting benchmarks:
+
+```bash
+ollama serve
+```
+
+## Running Benchmarks
+
+1. Go to the Settings page and install models you want to benchmark
+2. Navigate to the Benchmarks page
+3. Configure your benchmark parameters:
+   - Select a model
+   - Set the prompt template
+   - Configure total requests and concurrency
+   - Adjust model parameters (temperature, top_p, etc.)
+4. Click "Start Benchmark" to begin testing
+5. View real-time metrics during the benchmark
+6. Review historical benchmark data on the Dashboard
+
+## Metrics Explanation
+
+- **Tokens Per Second (TPS)**: The throughput of the model measured in tokens generated per second
+- **Latency**: Time to first token and inter-token latency
+- **GPU Utilization**: Percentage of GPU compute resources being used
+- **Memory Usage**: GPU memory consumption during inference
+- **Power Efficiency**: Tokens generated per watt of power consumed
+
+## Project Structure
+
+```
+├── app/                 # Backend application
+│   ├── api/             # FastAPI routes and endpoints
+│   ├── services/        # Business logic
+│   └── utils/           # Utility functions
+├── frontend/           # React frontend application
+├── Dockerfile          # Docker configuration
+└── requirements.txt    # Python dependencies
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

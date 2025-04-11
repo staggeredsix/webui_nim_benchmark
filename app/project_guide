@@ -1,0 +1,122 @@
+# NIM Benchmark Tool Programming Guide
+
+## Project Structure
+```
+├── app/
+│   ├── api/                 # FastAPI routes and endpoints
+│   ├── services/           # Business logic
+│   └── utils/             # Utility functions
+├── frontend/
+│   ├── src/
+│   │   ├── components/    # React components
+│   │   ├── hooks/        # Custom React hooks
+│   │   ├── routes/       # Page components
+│   │   ├── services/     # API clients
+│   │   └── types/       # TypeScript type definitions
+└── requirements.txt      # Python dependencies
+
+## Key Components
+
+### Backend (Python/FastAPI)
+
+1. `benchmark_service.py`: Manages benchmark execution
+   - Handles NIM container lifecycle
+   - Executes benchmarks
+   - Records metrics
+
+2. `metrics.py`: GPU metrics collection
+   - Real-time GPU monitoring
+   - System metrics tracking
+   - Historical data collection
+
+3. `container.py`: NIM container management
+   - Container lifecycle (start/stop)
+   - Health checks
+   - Port management
+
+### Frontend (React/TypeScript)
+
+1. `TelemetryComponents.tsx`: Real-time metrics display
+   - GPU utilization
+   - Memory usage
+   - Power consumption
+
+2. `BenchmarkHistory.tsx`: Historical data viewing
+   - Past benchmark results
+   - Performance metrics
+   - Export functionality
+
+## Common Tasks
+
+### Adding New Metrics
+
+1. Update `metrics.py`:
+```python
+def get_gpu_metrics(self, gpu_index: int) -> Dict:
+    # Add new metric to collection
+```
+
+2. Update TypeScript types in `types/metrics.ts`:
+```typescript
+interface MetricsData {
+    // Add new metric type
+}
+```
+
+3. Update display component in `TelemetryComponents.tsx`
+
+### Adding New Features
+
+1. Backend Route:
+   - Add endpoint in appropriate file under `app/api/`
+   - Implement service logic in `app/services/`
+
+2. Frontend Integration:
+   - Add API client method in `services/api.ts`
+   - Create/update React component
+   - Add to relevant route
+
+## Known Issues & Fixes
+
+1. WebSocket Connection:
+   - Use dynamic hostname
+   - Implement reconnection logic
+   - Add error handling
+
+2. Metrics Collection:
+   - Ensure consistent units (MB vs GB)
+   - Add proper error handling
+   - Implement retry logic
+
+3. Container Management:
+   - Add timeout handling
+   - Implement health checks
+   - Add cleanup logic
+
+## Testing
+
+1. Backend:
+```bash
+pytest tests/
+```
+
+2. Frontend:
+```bash
+npm test
+```
+
+## Common Errors
+
+1. "model_name not found":
+   - Check container_info structure
+   - Verify NIM container status
+
+2. WebSocket disconnections:
+   - Check network connectivity
+   - Verify port accessibility
+   - Check server logs
+
+3. Missing metrics:
+   - Verify nvidia-smi access
+   - Check GPU permissions
+   - Verify CUDA installation
