@@ -1,4 +1,4 @@
-# app/api/routes.py
+# app/api/routes.py (Updated version)
 from fastapi import APIRouter, Request, HTTPException, WebSocket
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -8,6 +8,8 @@ from app.utils.logger import logger
 from .endpoints.benchmark_endpoint import router as benchmark_router
 from .endpoints.models import router as models_router 
 from .endpoints.logs import router as logs_router
+from .endpoints.ngc import router as ngc_router
+from .endpoints.nim import router as nim_router
 from app.services.benchmark import benchmark_service
 from app.services.ollama import ollama_manager
 from app.utils.connection import connection_manager
@@ -17,10 +19,13 @@ from .endpoints.metrics_endpoint import router as metrics_router
 limiter = Limiter(key_func=get_remote_address)
 api_router = APIRouter()
 
+# Include all routers
 api_router.include_router(benchmark_router, prefix="/benchmark", tags=["benchmark"])
 api_router.include_router(models_router, prefix="/models", tags=["models"])
 api_router.include_router(logs_router, prefix="/logs", tags=["logs"])
 api_router.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
+api_router.include_router(ngc_router, prefix="/ngc-key", tags=["ngc"])
+api_router.include_router(nim_router, prefix="/nim", tags=["nim"])
 
 @api_router.websocket("/metrics")
 async def metrics_websocket(websocket: WebSocket):
@@ -53,13 +58,14 @@ async def benchmark(request: Request):
         max_tokens = payload.get('max_tokens', 50)
         total_requests = payload.get('total_requests', 100)
 
-        if not model_id:
-            raise HTTPException(status_code=400, detail="'model_id' is a required field.")
+        if not model_id and not payload.get('nim_id'):
+            raise HTTPException(status_code=400, detail="Either 'model_id' or 'nim_id' is required.")
 
-        # Check if model exists
-        model_info = await ollama_manager.get_model_info(model_id)
-        if not model_info:
-            raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
+        # If model_id is provided, check if model exists
+        if model_id:
+            model_info = await ollama_manager.get_model_info(model_id)
+            if not model_info:
+                raise HTTPException(status_code=404, detail=f"Model {model_id} not found")
 
         result = await benchmark_service.create_benchmark(payload)
         return result
