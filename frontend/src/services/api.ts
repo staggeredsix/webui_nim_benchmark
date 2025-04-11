@@ -90,14 +90,56 @@ export const getModelHealth = async (modelName: string): Promise<ModelHealth> =>
   }
 };
 
-export const saveLogs = async (logId: string, filename: string): Promise<void> => {
+export const saveLogs = async (containerId: string, filename: string): Promise<void> => {
   try {
     await axios.post(`${BASE_URL}/api/logs/save`, {
-      log_id: logId,
+      container_id: containerId,
       filename: filename
     });
   } catch (error) {
     console.error("Error saving logs:", error);
+    throw error;
+  }
+};
+
+// NGC Key Management APIs
+export const saveNgcKey = async (key: string): Promise<{ status: string }> => {
+  try {
+    const response = await axios.post(`${BASE_URL}/api/ngc-key`, { key });
+    return response.data;
+  } catch (error) {
+    console.error("Error saving NGC key:", error);
+    throw error;
+  }
+};
+
+export const getNgcKey = async (): Promise<{ exists: boolean }> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/api/ngc-key`);
+    return response.data;
+  } catch (error) {
+    console.error("Error retrieving NGC key:", error);
+    throw error;
+  }
+};
+
+export const deleteNgcKey = async (): Promise<{ status: string }> => {
+  try {
+    const response = await axios.delete(`${BASE_URL}/api/ngc-key`);
+    return response.data;
+  } catch (error) {
+    console.error("Error deleting NGC key:", error);
+    throw error;
+  }
+};
+
+// NIM-related APIs
+export const getNims = async () => {
+  try {
+    const response = await axios.get(`${BASE_URL}/api/nim/list`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching NIMs:", error);
     throw error;
   }
 };
