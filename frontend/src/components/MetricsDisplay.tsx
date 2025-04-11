@@ -1,7 +1,8 @@
-// src/components/MetricsDisplay.tsx
+// src/components/MetricsDisplay.tsx (updated)
 
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { formatBytes, formatNumber } from '@/utils/format';
 
 interface GPUMetric {
   name?: string;
@@ -26,6 +27,11 @@ interface MetricsDisplayProps {
 }
 
 const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, currentMetrics }) => {
+  // Helper function to convert MB to GB with proper formatting
+  const formatMemory = (mb: number): string => {
+    return `${formatNumber(mb / 1024, 2)} GB`;
+  };
+
   return (
     <div className="space-y-6">
       {/* Recent Benchmarks */}
@@ -95,7 +101,7 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Memory</span>
-                  <span>{gpu.gpu_memory_used}/{gpu.gpu_memory_total} GB</span>
+                  <span>{formatMemory(gpu.gpu_memory_used)}/{formatMemory(gpu.gpu_memory_total)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-400">Power</span>
