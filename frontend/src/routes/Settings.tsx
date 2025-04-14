@@ -118,7 +118,24 @@ const Settings = () => {
           This tool allows you to benchmark LLM performance using Ollama, measuring throughput, 
           latency, and hardware utilization metrics to help you optimize your models.
         </p>
-        <p className="text-sm text-gray-400">
+        <div className="mt-4 space-y-2">
+          <h3 className="font-medium">New Features:</h3>
+          <ul className="list-disc list-inside space-y-1 text-sm">
+            <li>
+              <strong>Auto Stress Test</strong>: Automatically finds the optimal concurrency level for your hardware
+              by incrementally increasing load until performance drops below threshold.
+            </li>
+            <li>
+              <strong>Direct Model Installation</strong>: Simply enter model names to install them directly from
+              the Ollama Library without additional steps.
+            </li>
+            <li>
+              <strong>Performance Metrics</strong>: Detailed metrics on throughput, latency, GPU utilization, and
+              memory usage to help you fine-tune your deployment.
+            </li>
+          </ul>
+        </div>
+        <p className="text-sm text-gray-400 mt-4">
           To get started, install models in the Model Management section above, 
           then run benchmarks from the Benchmarks page.
         </p>
