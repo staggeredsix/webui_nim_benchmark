@@ -56,4 +56,3 @@ export interface AutoBenchmarkChartData {
   latency: number;
   config: string;
 }
-
