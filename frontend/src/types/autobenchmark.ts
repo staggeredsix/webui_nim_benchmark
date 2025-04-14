@@ -57,20 +57,3 @@ export interface AutoBenchmarkChartData {
   config: string;
 }
 
-// Helper functions to convert between types
-export function mapTestToChartData(test: BenchmarkTestResult): AutoBenchmarkChartData {
-  return {
-    name: `C${test.concurrency}:B${test.batch_size}`,
-    concurrency: test.concurrency,
-    tokens_per_second: test.tokens_per_second,
-    latency: test.latency,
-    config: test.streaming ? 'Streaming' : `Batch:${test.batch_size}`
-  };
-}
-
-export function getChartDataFromResults(results: AutoBenchmarkResults): AutoBenchmarkChartData[] {
-  if (!results || !results.tests) return [];
-  return results.tests
-    .filter(test => !test.error)
-    .map(test => mapTestToChartData(test));
-}
