@@ -10,6 +10,7 @@ from .endpoints.models import router as models_router
 from .endpoints.logs import router as logs_router
 from .endpoints.ngc import router as ngc_router
 from .endpoints.nim import router as nim_router
+from .endpoints.autobenchmark import router as autobenchmark_router
 from app.services.benchmark import benchmark_service
 from app.services.ollama import ollama_manager
 from app.utils.connection import connection_manager
@@ -26,6 +27,7 @@ api_router.include_router(logs_router, prefix="/logs", tags=["logs"])
 api_router.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
 api_router.include_router(ngc_router, prefix="/ngc-key", tags=["ngc"])
 api_router.include_router(nim_router, prefix="/nim", tags=["nim"])
+api_router.include_router(autobenchmark_router, prefix="/autobenchmark", tags=["autobenchmark"])
 
 @api_router.websocket("/metrics")
 async def metrics_websocket(websocket: WebSocket):
