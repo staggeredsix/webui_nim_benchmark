@@ -14,10 +14,18 @@ interface GPUMetric {
   power_draw: number;
 }
 
+// Updated to include all the properties we're using
 interface HistoricalMetric {
   timestamp: string;
   tokens_per_second: number;
   latency: number;
+  // Add the missing properties
+  model_name?: string;
+  streaming_enabled?: boolean;
+  batch_size?: number;
+  time_to_first_token?: number;
+  p95_latency?: number;
+  model_tokens_per_second?: number;
 }
 
 interface MetricsDisplayProps {
@@ -37,22 +45,27 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
   
   // Group benchmarks by stream vs batch for comparison
   const groupedBenchmarks = React.useMemo(() => {
-    const streamed = benchmarkHistory
+    // Filter out benchmarks that don't have the required properties
+    const validBenchmarks = benchmarkHistory.filter(
+      b => b.model_name && (typeof b.streaming_enabled !== 'undefined')
+    );
+    
+    const streamed = validBenchmarks
       .filter(b => b.streaming_enabled)
       .map(b => ({
-        name: b.model_name,
+        name: b.model_name || 'Unknown',
         tokens_per_second: b.tokens_per_second,
         category: 'Streaming',
-        time_to_first_token: b.time_to_first_token
+        time_to_first_token: b.time_to_first_token || 0
       }));
       
-    const batched = benchmarkHistory
+    const batched = validBenchmarks
       .filter(b => !b.streaming_enabled)
       .map(b => ({
-        name: b.model_name,
+        name: b.model_name || 'Unknown',
         tokens_per_second: b.tokens_per_second,
         category: `Batch ${b.batch_size || 1}`,
-        time_to_first_token: b.time_to_first_token
+        time_to_first_token: b.time_to_first_token || 0
       }));
       
     return [...streamed, ...batched];
@@ -125,7 +138,7 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                   strokeWidth={2}
                   dot={false}
                 />
-                {benchmarkHistory.some(b => b.model_tokens_per_second) && (
+                {benchmarkHistory.some(b => b.model_tokens_per_second !== undefined) && (
                   <Line 
                     yAxisId="left"
                     type="monotone" 
