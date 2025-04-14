@@ -5,7 +5,7 @@ import { Zap, Layers, ArrowUp, ArrowDown, Cpu, HardDrive, AlertCircle } from 'lu
 const PerformanceTips: React.FC = () => {
   return (
     <div className="space-y-4">
-      <h2 className="text-xl font-bold">Performance Optimization Guide</h2>
+      <h2 className="text-xl font-bold"></h2>
       
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Streaming vs Batching */}
