@@ -1,10 +1,11 @@
+// Fixed AutoBenchmark.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { AlertCircle, PlayCircle, StopCircle, TrendingUp, Gauge, BarChart2, Check } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
          BarChart, Bar, ScatterChart, Scatter, ZAxis } from 'recharts';
 import { getModels, startAutoBenchmark, stopAutoBenchmark, getAutoBenchmarkStatus, getAutoBenchmarkHistory } from '@/services/api';
 import { formatNumber } from '@/utils/format';
-import { getChartDataFromResults } from '@/utils/chartHelpers'; // Fixed import from utils instead of types
+import { getChartDataFromResults } from '@/utils/chartHelpers';
 import type { OllamaModel } from '@/types/model';
 import type { AutoBenchmarkRequest, AutoBenchmarkStatus, AutoBenchmarkResults, 
               BenchmarkTestResult, AutoBenchmarkChartData } from '@/types/autobenchmark';
@@ -39,17 +40,22 @@ const AutoBenchmark: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Convert benchmark results to chart data
+    // Convert benchmark results to chart data, with proper null checking
     if (benchmarkStatus?.current_results?.tests) {
-      setChartData(getChartDataFromResults(benchmarkStatus.current_results));
+      try {
+        setChartData(getChartDataFromResults(benchmarkStatus.current_results));
+      } catch (err) {
+        console.error("Error converting benchmark data to chart format:", err);
+        setChartData([]);
+      }
     }
   }, [benchmarkStatus]);
 
   const loadModels = async () => {
     try {
       const modelList = await getModels();
-      setModels(modelList);
-      if (modelList.length > 0 && !selectedModel) {
+      setModels(modelList || []);
+      if (modelList?.length > 0 && !selectedModel) {
         setSelectedModel(modelList[0].name);
       }
     } catch (err) {
@@ -61,15 +67,48 @@ const AutoBenchmark: React.FC = () => {
   const loadHistory = async () => {
     try {
       const historyData = await getAutoBenchmarkHistory();
-      setHistory(historyData);
+      // Ensure we have valid data with proper default values
+      setHistory(Array.isArray(historyData) ? historyData : []);
     } catch (err) {
       console.error('Failed to load auto-benchmark history:', err);
+      setHistory([]);
     }
   };
 
   const checkStatus = async () => {
     try {
       const status = await getAutoBenchmarkStatus();
+      
+      // Ensure the status contains valid data
+      if (!status) {
+        setBenchmarkStatus({
+          is_running: false,
+          current_results: {
+            model_id: '',
+            timestamp: new Date().toISOString(),
+            tests: [],
+            optimal_config: null,
+            status: 'error'
+          }
+        });
+        return;
+      }
+      
+      // Ensure current_results contains a tests array
+      if (!status.current_results) {
+        status.current_results = {
+          model_id: '',
+          timestamp: new Date().toISOString(),
+          tests: [],
+          optimal_config: null,
+          status: 'error'
+        };
+      }
+      
+      if (!status.current_results.tests) {
+        status.current_results.tests = [];
+      }
+      
       setBenchmarkStatus(status);
       setIsRunning(status.is_running);
       
@@ -78,6 +117,17 @@ const AutoBenchmark: React.FC = () => {
         const interval = setInterval(async () => {
           try {
             const updatedStatus = await getAutoBenchmarkStatus();
+            
+            // Ensure the updated status contains valid data
+            if (!updatedStatus || !updatedStatus.current_results) {
+              return;
+            }
+            
+            // Ensure tests is an array
+            if (!updatedStatus.current_results.tests) {
+              updatedStatus.current_results.tests = [];
+            }
+            
             setBenchmarkStatus(updatedStatus);
             setIsRunning(updatedStatus.is_running);
             
@@ -99,6 +149,16 @@ const AutoBenchmark: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to check auto-benchmark status:', err);
+      setBenchmarkStatus({
+        is_running: false,
+        current_results: {
+          model_id: '',
+          timestamp: new Date().toISOString(),
+          tests: [],
+          optimal_config: null,
+          status: 'error'
+        }
+      });
     }
   };
 
@@ -283,7 +343,7 @@ const AutoBenchmark: React.FC = () => {
       )}
 
       {/* View selectors for test results */}
-      {(benchmarkStatus?.current_results?.tests?.length > 0 || chartData.length > 0) && (
+      {((benchmarkStatus?.current_results?.tests && benchmarkStatus.current_results.tests.length > 0) || chartData.length > 0) && (
         <div className="mb-4">
           <div className="flex space-x-2">
             <button
@@ -492,7 +552,7 @@ const AutoBenchmark: React.FC = () => {
         </div>
       )}
       
-      {(!benchmarkStatus || benchmarkStatus.current_results.tests.length === 0) && !isRunning && (
+      {(!benchmarkStatus || !benchmarkStatus.current_results.tests.length) && !isRunning && (
         <div className="bg-gray-700 p-6 text-center rounded-lg">
           <BarChart2 className="mx-auto mb-3 text-gray-400" size={40} />
           <p className="text-lg mb-1">No benchmark data yet</p>
