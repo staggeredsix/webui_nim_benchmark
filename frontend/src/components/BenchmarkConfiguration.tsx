@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { startBenchmark, getModels } from '@/services/api';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Info } from 'lucide-react';
 import type { BenchmarkConfig } from '@/types/benchmark';
 import type { OllamaModel } from '@/types/model';
 
@@ -13,7 +13,12 @@ const BenchmarkConfiguration = () => {
     concurrency_level: 10,
     max_tokens: 50,
     model_id: '',
-    stream: true,
+    // Default to false for benchmarks - better performance
+    stream: false,
+    // New configuration options
+    batch_size: 4,
+    context_size: 'auto',
+    // Advanced generation parameters
     temperature: 0.7,
     top_p: 0.9,
     top_k: 40
@@ -23,6 +28,7 @@ const BenchmarkConfiguration = () => {
   const [isRunning, setIsRunning] = useState(false);
   const [metrics, setMetrics] = useState(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showPerformanceInfo, setShowPerformanceInfo] = useState(false);
 
   useEffect(() => {
     loadModels();
@@ -164,15 +170,72 @@ const BenchmarkConfiguration = () => {
             />
           </div>
 
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="streaming"
-              checked={formData.stream}
-              onChange={e => setFormData({...formData, stream: e.target.checked})}
-              className="mr-2"
-            />
-            <label htmlFor="streaming" className="text-sm">Enable streaming</label>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="streaming"
+                checked={formData.stream}
+                onChange={e => setFormData({...formData, stream: e.target.checked})}
+                className="mr-2"
+              />
+              <label htmlFor="streaming" className="text-sm">Enable streaming</label>
+            </div>
+            
+            <button 
+              type="button"
+              onClick={() => setShowPerformanceInfo(!showPerformanceInfo)}
+              className="text-blue-400 hover:text-blue-300 flex items-center text-xs"
+            >
+              <Info className="w-4 h-4 mr-1" />
+              Performance tips
+            </button>
+          </div>
+          
+          {showPerformanceInfo && (
+            <div className="p-3 bg-blue-900/30 border border-blue-800 rounded text-xs">
+              <p className="mb-2"><strong>For maximum throughput:</strong> Disable streaming and use batching.</p>
+              <p className="mb-2"><strong>For lowest latency:</strong> Enable streaming when you need immediate first token response.</p>
+              <p><strong>For memory efficiency:</strong> Set a smaller context size if your GPU has limited VRAM.</p>
+            </div>
+          )}
+
+          {/* New batch size control - only enabled when streaming is off */}
+          {!formData.stream && (
+            <div>
+              <label className="block text-sm mb-1">Batch Size <span className="text-gray-400">(non-streaming only)</span></label>
+              <input
+                type="number"
+                value={formData.batch_size}
+                onChange={e => setFormData({...formData, batch_size: Number(e.target.value)})}
+                className="w-full bg-gray-700 rounded p-2"
+                min={1}
+                max={formData.concurrency_level}
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Larger batch sizes improve throughput but may increase latency. Must be ≤ concurrency.
+              </p>
+            </div>
+          )}
+          
+          {/* New context size control */}
+          <div>
+            <label className="block text-sm mb-1">Context Size <span className="text-gray-400">(affects speed & memory)</span></label>
+            <select 
+              value={formData.context_size}
+              onChange={e => setFormData({...formData, context_size: e.target.value})}
+              className="w-full bg-gray-700 rounded p-2"
+            >
+              <option value="auto">Auto (use model default)</option>
+              <option value="1024">Small (1K, fastest)</option>
+              <option value="2048">Medium (2K)</option>
+              <option value="4096">Large (4K)</option>
+              <option value="8192">XL (8K, slowest)</option>
+              <option value="16384">XXL (16K, most VRAM)</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">
+              Smaller context sizes use less memory and have faster inference speed.
+            </p>
           </div>
 
           <div>
@@ -258,11 +321,35 @@ const BenchmarkConfiguration = () => {
             <li><strong>Power Efficiency</strong>: Tokens generated per watt of power</li>
           </ul>
           
-          <p className="text-sm text-gray-400 mt-4">
-            Running multiple requests in parallel (concurrency) can help identify the optimal 
-            batch size for your hardware. The results will show you the most efficient configuration 
-            for your specific model and system.
-          </p>
+          <div className="mt-4 p-4 bg-gray-700 rounded">
+            <h3 className="font-medium mb-2">Performance Optimization Tips</h3>
+            
+            <div className="space-y-3 text-sm">
+              <div>
+                <h4 className="font-medium text-green-400">Streaming vs. Non-Streaming</h4>
+                <p className="text-gray-300">
+                  Non-streaming mode has higher throughput but higher time-to-first-token.
+                  Streaming mode has lower throughput but delivers the first token faster.
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-medium text-green-400">Batching (Non-Streaming Only)</h4>
+                <p className="text-gray-300">
+                  Batching groups multiple requests together, improving GPU utilization and throughput.
+                  Larger batch sizes generally improve performance up to a point, then may cause increased latency or OOM errors.
+                </p>
+              </div>
+              
+              <div>
+                <h4 className="font-medium text-green-400">Context Size</h4>
+                <p className="text-gray-300">
+                  Smaller context sizes use less GPU memory and often have faster inference speed.
+                  Only use large context sizes if you need long context in your application.
+                </p>
+              </div>
+            </div>
+          </div>
 
           {models.length > 0 && formData.model_id && (
             <div className="mt-6 p-4 bg-gray-700 rounded">
