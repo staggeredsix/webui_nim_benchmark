@@ -40,13 +40,15 @@ export const getModels = async (): Promise<OllamaModel[]> => {
   }
 };
 
+// Note: searchModels function is now deprecated but kept for backward compatibility
+// The UI now uses the direct Ollama Library URL instead
 export const searchModels = async (query: string = ""): Promise<OllamaModel[]> => {
   try {
-    const response = await axios.post(`${BASE_URL}/api/models/search`, { query });
-    return response.data;
+    // This will return an empty array since we're bypassing the search to use the direct Ollama Library URL
+    return [];
   } catch (error) {
     console.error("Error searching models:", error);
-    throw error;
+    return [];
   }
 };
 
@@ -129,17 +131,6 @@ export const deleteNgcKey = async (): Promise<{ status: string }> => {
     return response.data;
   } catch (error) {
     console.error("Error deleting NGC key:", error);
-    throw error;
-  }
-};
-
-// NIM-related APIs
-export const getNims = async () => {
-  try {
-    const response = await axios.get(`${BASE_URL}/api/nim/list`);
-    return response.data;
-  } catch (error) {
-    console.error("Error fetching NIMs:", error);
     throw error;
   }
 };
