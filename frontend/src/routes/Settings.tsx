@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Settings as SettingsIcon, RefreshCw } from 'lucide-react';
+import { Settings as SettingsIcon, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 import ModelManagement from '@/components/ModelManagement';
+import PerformanceTips from '@/components/PerformanceTips';
 
 const Settings = () => {
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [showPerformanceTips, setShowPerformanceTips] = useState(false);
 
   const showMessage = (type: string, text: string) => {
     setMessage({ type, text });
@@ -86,6 +88,28 @@ const Settings = () => {
 
       <div className="card bg-gray-800/50 backdrop-blur">
         <ModelManagement />
+      </div>
+
+      <div className="card bg-gray-800/50 backdrop-blur">
+        <div className="flex items-center justify-between mb-4 cursor-pointer" 
+             onClick={() => setShowPerformanceTips(!showPerformanceTips)}>
+          <h2 className="text-xl font-bold">Performance Optimization Guide</h2>
+          <div>
+            {showPerformanceTips ? 
+              <ChevronDown className="w-5 h-5 text-gray-400" /> : 
+              <ChevronRight className="w-5 h-5 text-gray-400" />
+            }
+          </div>
+        </div>
+        
+        {showPerformanceTips && <PerformanceTips />}
+        
+        {!showPerformanceTips && (
+          <p className="text-gray-400 text-sm">
+            Click to expand and learn how to optimize LLM performance with streaming vs. batching settings, 
+            context size adjustments, and concurrency optimization.
+          </p>
+        )}
       </div>
 
       <div className="card bg-gray-800/50 backdrop-blur">
