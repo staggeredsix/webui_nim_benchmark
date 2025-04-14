@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Download, X, Search, RefreshCw, Check, AlertTriangle } from 'lucide-react';
-import { getModels, searchModels, pullModel, deleteModel, getModelHealth } from '@/services/api';
+import { Download, X, RefreshCw, Check, AlertTriangle, ExternalLink } from 'lucide-react';
+import { getModels, pullModel, deleteModel, getModelHealth } from '@/services/api';
 import { OllamaModel, ModelHealth } from '@/types/model';
 
 const ModelManagement: React.FC = () => {
   const [models, setModels] = useState<OllamaModel[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<OllamaModel[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  const [modelNameInput, setModelNameInput] = useState('');
   const [downloading, setDownloading] = useState<string | null>(null);
   const [modelHealth, setModelHealth] = useState<Record<string, ModelHealth>>({});
   const [loading, setLoading] = useState(true);
@@ -44,23 +42,21 @@ const ModelManagement: React.FC = () => {
     }
   };
 
-  const handleSearch = async () => {
-    try {
-      setIsSearching(true);
-      const results = await searchModels(searchQuery);
-      setSearchResults(results);
-    } catch (err) {
-      setError("Failed to search models");
-      console.error(err);
-    } finally {
-      setIsSearching(false);
+  const handleInstallModel = async () => {
+    if (!modelNameInput.trim()) {
+      setError("Please enter a model name");
+      return;
     }
-  };
 
-  const handlePullModel = async (modelName: string) => {
+    // Extract just the model name/tag from input
+    // This can handle formats like "ollama pull llama2" or just "llama2"
+    const modelParts = modelNameInput.trim().split(' ');
+    const modelName = modelParts[modelParts.length - 1];
+
     try {
       setDownloading(modelName);
       await pullModel(modelName);
+      setModelNameInput('');
       setTimeout(() => {
         fetchModels();
         setDownloading(null);
@@ -112,61 +108,46 @@ const ModelManagement: React.FC = () => {
         </div>
       )}
 
-      {/* Search Model Section */}
+      {/* Install New Model Section */}
       <div className="bg-gray-800 p-4 rounded-lg">
-        <h3 className="font-medium mb-4">Search Ollama Library</h3>
-        <div className="flex gap-2 mb-4">
-          <div className="relative flex-1">
+        <h3 className="font-medium mb-4">Install New Model</h3>
+        <div className="flex flex-col gap-4">
+          <div className="relative">
             <input
               type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search models (e.g., llama, mistral, yi)..."
-              className="w-full bg-gray-700 rounded-lg pl-10 pr-4 py-2"
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              value={modelNameInput}
+              onChange={(e) => setModelNameInput(e.target.value)}
+              placeholder="Enter model name (e.g., llama2, mistral, gemma)"
+              className="w-full bg-gray-700 rounded-lg p-2 pr-4"
+              onKeyDown={(e) => e.key === 'Enter' && handleInstallModel()}
             />
-            <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
           </div>
-          <button
-            onClick={handleSearch}
-            disabled={isSearching}
-            className="bg-blue-600 hover:bg-blue-700 px-4 rounded-lg text-white disabled:opacity-50"
-          >
-            {isSearching ? "Searching..." : "Search"}
-          </button>
+          
+          <div className="flex gap-2">
+            <button
+              onClick={handleInstallModel}
+              disabled={downloading !== null || !modelNameInput.trim()}
+              className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded text-white disabled:opacity-50 flex-1"
+            >
+              {downloading ? "Installing..." : "Install Model"}
+            </button>
+            
+            <a
+              href="https://ollama.com/library"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-white flex items-center justify-center"
+            >
+              <ExternalLink className="w-4 h-4 mr-2" />
+              Browse Ollama Library
+            </a>
+          </div>
+          
+          <p className="text-sm text-gray-400">
+            Enter the model name you want to install, or check the Ollama Library for available models.
+            You can enter just the model name (e.g., "llama2") or the full command (e.g., "ollama pull llama2").
+          </p>
         </div>
-
-        {/* Search Results */}
-        {searchResults.length > 0 && (
-          <div className="space-y-3">
-            <h4 className="text-sm font-medium text-gray-300">Search Results</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {searchResults.map(model => (
-                <div 
-                  key={model.model_id} 
-                  className="bg-gray-700 p-3 rounded-lg flex justify-between items-center"
-                >
-                  <div>
-                    <div className="font-medium">{model.name}</div>
-                    {model.description && (
-                      <div className="text-sm text-gray-400 line-clamp-2">{model.description}</div>
-                    )}
-                    {model.size > 0 && (
-                      <div className="text-xs text-gray-500">{formatFileSize(model.size)}</div>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => handlePullModel(model.name)}
-                    disabled={downloading === model.name}
-                    className="ml-2 bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-white text-sm disabled:opacity-50 min-w-[90px] text-center"
-                  >
-                    {downloading === model.name ? "Downloading..." : "Download"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Installed Models */}
@@ -181,7 +162,7 @@ const ModelManagement: React.FC = () => {
           <div className="text-center py-8 text-gray-400">
             <Download size={24} className="mx-auto mb-2" />
             <p>No models installed</p>
-            <p className="text-sm text-gray-500">Search and download models using the form above</p>
+            <p className="text-sm text-gray-500">Install models using the form above</p>
           </div>
         ) : (
           <div className="space-y-3">
