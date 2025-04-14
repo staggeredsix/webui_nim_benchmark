@@ -2,6 +2,7 @@
 import axios from "axios";
 import type { BenchmarkRun, BenchmarkConfig } from '../types/benchmark';
 import type { OllamaModel, OllamaModelInfo, ModelHealth } from '../types/model';
+import type { AutoBenchmarkStatus, AutoBenchmarkRequest } from '../types/autobenchmark';
 
 const BASE_URL = `http://${window.location.hostname}:7000`;
 const WS_BASE = `ws://${window.location.hostname}:7000`;
@@ -88,6 +89,59 @@ export const getModelHealth = async (modelName: string): Promise<ModelHealth> =>
     return response.data;
   } catch (error) {
     console.error("Error checking model health:", error);
+    throw error;
+  }
+};
+
+// Auto-Benchmark API Functions
+export const startAutoBenchmark = async (request: AutoBenchmarkRequest): Promise<{status: string; message: string}> => {
+  try {
+    const response = await axios.post(`${BASE_URL}/api/autobenchmark/start`, request);
+    return response.data;
+  } catch (error) {
+    console.error("Error starting auto-benchmark:", error);
+    if (axios.isAxiosError(error)) {
+      throw new Error(error.response?.data?.detail || 'Failed to start auto-benchmark');
+    }
+    throw error;
+  }
+};
+
+export const stopAutoBenchmark = async (): Promise<{status: string}> => {
+  try {
+    const response = await axios.post(`${BASE_URL}/api/autobenchmark/stop`);
+    return response.data;
+  } catch (error) {
+    console.error("Error stopping auto-benchmark:", error);
+    if (axios.isAxiosError(error)) {
+      throw new Error(error.response?.data?.detail || 'Failed to stop auto-benchmark');
+    }
+    throw error;
+  }
+};
+
+export const getAutoBenchmarkStatus = async (): Promise<AutoBenchmarkStatus> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/api/autobenchmark/status`);
+    return response.data;
+  } catch (error) {
+    console.error("Error getting auto-benchmark status:", error);
+    if (axios.isAxiosError(error)) {
+      throw new Error(error.response?.data?.detail || 'Failed to get auto-benchmark status');
+    }
+    throw error;
+  }
+};
+
+export const getAutoBenchmarkHistory = async (): Promise<any[]> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/api/autobenchmark/history`);
+    return response.data;
+  } catch (error) {
+    console.error("Error getting auto-benchmark history:", error);
+    if (axios.isAxiosError(error)) {
+      throw new Error(error.response?.data?.detail || 'Failed to get auto-benchmark history');
+    }
     throw error;
   }
 };
