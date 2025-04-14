@@ -1,41 +1,49 @@
-import React, { useState, useEffect } from 'react';
-import { AlertCircle, PlayCircle, StopCircle, TrendingUp, Gauge } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { getModels, startBenchmark } from '@/services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { AlertCircle, PlayCircle, StopCircle, TrendingUp, Gauge, BarChart2, Check } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+         BarChart, Bar, ScatterChart, Scatter, ZAxis } from 'recharts';
+import { getModels, startAutoBenchmark, stopAutoBenchmark, getAutoBenchmarkStatus, getAutoBenchmarkHistory } from '@/services/api';
 import { formatNumber } from '@/utils/format';
 import type { OllamaModel } from '@/types/model';
-import type { BenchmarkConfig } from '@/types/benchmark';
+import type { AutoBenchmarkRequest, AutoBenchmarkStatus, AutoBenchmarkResults, 
+              BenchmarkTestResult, AutoBenchmarkChartData,
+              getChartDataFromResults } from '@/types/autobenchmark';
 
-interface StressTestResult {
-  concurrency: number;
-  throughput: number;
-  latency: number;
-  timestamp: string;
-}
+const POLL_INTERVAL = 3000; // Poll for status updates every 3 seconds
 
 const AutoBenchmark: React.FC = () => {
   const [models, setModels] = useState<OllamaModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
-  const [maxTokens, setMaxTokens] = useState(128);
   const [prompt, setPrompt] = useState('Write a short paragraph about artificial intelligence.');
+  const [description, setDescription] = useState('');
   
   const [isRunning, setIsRunning] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
+  const [statusPolling, setStatusPolling] = useState<NodeJS.Timeout | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<StressTestResult[]>([]);
-  const [optimalConcurrency, setOptimalConcurrency] = useState<number | null>(null);
-  const [optimalThroughput, setOptimalThroughput] = useState<number | null>(null);
-  const [belowThresholdCount, setBelowThresholdCount] = useState(0);
+  const [benchmarkStatus, setBenchmarkStatus] = useState<AutoBenchmarkStatus | null>(null);
+  const [history, setHistory] = useState<AutoBenchmarkResults[]>([]);
+  const [chartData, setChartData] = useState<AutoBenchmarkChartData[]>([]);
+  const [selectedView, setSelectedView] = useState<'throughput' | 'latency' | 'comparison'>('throughput');
 
-  const MINIMUM_TPS_THRESHOLD = 12; // tokens per second threshold
-  const CONCURRENCY_INCREMENT = 2; // how much to increase concurrency each step
-  const STARTING_CONCURRENCY = 2; // starting concurrency level
-  const BELOW_THRESHOLD_LIMIT = 2; // how many consecutive below-threshold results to end the test
-  const TOTAL_REQUESTS_PER_STEP = 20; // number of requests per test step
-
+  // Automatically poll for updates when a benchmark is running
   useEffect(() => {
     loadModels();
+    checkStatus();
+    loadHistory();
+
+    return () => {
+      if (statusPolling) {
+        clearInterval(statusPolling);
+      }
+    };
   }, []);
+
+  useEffect(() => {
+    // Convert benchmark results to chart data
+    if (benchmarkStatus?.current_results?.tests) {
+      setChartData(getChartDataFromResults(benchmarkStatus.current_results));
+    }
+  }, [benchmarkStatus]);
 
   const loadModels = async () => {
     try {
@@ -50,6 +58,50 @@ const AutoBenchmark: React.FC = () => {
     }
   };
 
+  const loadHistory = async () => {
+    try {
+      const historyData = await getAutoBenchmarkHistory();
+      setHistory(historyData);
+    } catch (err) {
+      console.error('Failed to load auto-benchmark history:', err);
+    }
+  };
+
+  const checkStatus = async () => {
+    try {
+      const status = await getAutoBenchmarkStatus();
+      setBenchmarkStatus(status);
+      setIsRunning(status.is_running);
+      
+      // If a benchmark is running, start polling for updates
+      if (status.is_running && !statusPolling) {
+        const interval = setInterval(async () => {
+          try {
+            const updatedStatus = await getAutoBenchmarkStatus();
+            setBenchmarkStatus(updatedStatus);
+            setIsRunning(updatedStatus.is_running);
+            
+            // If the benchmark is no longer running, stop polling and refresh history
+            if (!updatedStatus.is_running) {
+              clearInterval(interval);
+              setStatusPolling(null);
+              loadHistory();
+            }
+          } catch (e) {
+            console.error('Error polling status:', e);
+          }
+        }, POLL_INTERVAL);
+        
+        setStatusPolling(interval);
+      } else if (!status.is_running && statusPolling) {
+        clearInterval(statusPolling);
+        setStatusPolling(null);
+      }
+    } catch (err) {
+      console.error('Failed to check auto-benchmark status:', err);
+    }
+  };
+
   const startStressTest = async () => {
     if (!selectedModel) {
       setError('Please select a model');
@@ -57,114 +109,73 @@ const AutoBenchmark: React.FC = () => {
     }
 
     try {
-      setIsRunning(true);
-      setResults([]);
-      setCurrentStep(0);
-      setOptimalConcurrency(null);
-      setOptimalThroughput(null);
-      setBelowThresholdCount(0);
       setError(null);
-
-      // Start with low concurrency
-      let currentConcurrency = STARTING_CONCURRENCY;
-      let shouldContinue = true;
-
-      while (shouldContinue) {
-        setCurrentStep(prev => prev + 1);
-        
-        // Run a benchmark with the current concurrency
-        const result = await runBenchmarkStep(currentConcurrency);
-        
-        // Update results
-        setResults(prev => [...prev, result]);
-        
-        // Check if we should continue
-        if (result.throughput < MINIMUM_TPS_THRESHOLD) {
-          setBelowThresholdCount(prev => prev + 1);
-          
-          // If we've seen multiple results below threshold, stop the test
-          if (belowThresholdCount + 1 >= BELOW_THRESHOLD_LIMIT) {
-            shouldContinue = false;
-            
-            // Set optimal values (the highest throughput we observed)
-            const bestResult = [...results, result].reduce(
-              (best, current) => current.throughput > best.throughput ? current : best, 
-              { throughput: 0, concurrency: 0 } as StressTestResult
-            );
-            
-            setOptimalConcurrency(bestResult.concurrency);
-            setOptimalThroughput(bestResult.throughput);
-          }
-        } else {
-          // Reset the below threshold counter if we're above the threshold
-          setBelowThresholdCount(0);
-          
-          // Increase concurrency for next step
-          currentConcurrency += CONCURRENCY_INCREMENT;
-        }
-        
-        // Safety check - don't go too high
-        if (currentConcurrency > 100) {
-          shouldContinue = false;
-        }
-        
-        // Check if the test was manually stopped
-        if (!isRunning) {
-          shouldContinue = false;
-        }
-      }
-    } catch (err) {
-      console.error('Stress test error:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred during the stress test');
-    } finally {
-      setIsRunning(false);
-    }
-  };
-
-  const stopStressTest = () => {
-    setIsRunning(false);
-  };
-
-  const runBenchmarkStep = async (concurrency: number): Promise<StressTestResult> => {
-    // Configure benchmark
-    const config: BenchmarkConfig = {
-      name: `Stress-Test-${selectedModel}-C${concurrency}`,
-      model_id: selectedModel,
-      prompt: prompt,
-      total_requests: TOTAL_REQUESTS_PER_STEP,
-      concurrency_level: concurrency,
-      max_tokens: maxTokens,
-      stream: false, // Turn off streaming for benchmarking
-      batch_size: Math.max(1, Math.floor(concurrency / 4)) // Simple heuristic
-    };
-    
-    try {
-      const response = await startBenchmark(config);
       
-      // Wait for benchmark to complete and get results
-      // In a real implementation, you might poll for results or use WebSockets
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      // For now, simulate realistic results 
-      // In the real implementation, you would fetch the actual results
-      const throughput = 
-        concurrency <= 10 ? 
-          concurrency * 3 + Math.random() * 5 : // Good scaling up to ~10
-          30 + Math.random() * 10 - Math.max(0, (concurrency - 20) * 2); // Diminishing returns and eventual dropoff
-      
-      const latency = 
-        200 + (concurrency * 50) + Math.random() * 100;
-      
-      return {
-        concurrency,
-        throughput,
-        latency,
-        timestamp: new Date().toISOString()
+      const request: AutoBenchmarkRequest = {
+        model_id: selectedModel,
+        prompt,
+        description
       };
-    } catch (error) {
-      console.error('Benchmark step error:', error);
-      throw error;
+      
+      const response = await startAutoBenchmark(request);
+      setIsRunning(true);
+      
+      // Start polling for updates
+      await checkStatus();
+      
+    } catch (err) {
+      console.error('Error starting auto-benchmark:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred starting the benchmark');
     }
+  };
+
+  const stopStressTest = async () => {
+    try {
+      await stopAutoBenchmark();
+      setError(null);
+    } catch (err) {
+      console.error('Error stopping auto-benchmark:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred stopping the benchmark');
+    }
+  };
+
+  // Format the streaming/batch description
+  const formatConfigLabel = (test: BenchmarkTestResult): string => {
+    return test.streaming 
+      ? `Streaming (C:${test.concurrency})` 
+      : `Batch ${test.batch_size} (C:${test.concurrency})`;
+  };
+
+  // Get appropriate UI colors based on performance
+  const getPerformanceColor = (tps: number): string => {
+    if (tps >= 30) return '#10B981'; // Green
+    if (tps >= 12) return '#3B82F6'; // Blue
+    return '#F59E0B'; // Amber
+  };
+
+  // Format test status tag
+  const getTestStatusTag = (test: BenchmarkTestResult) => {
+    if (test.error) {
+      return (
+        <span className="px-2 py-0.5 bg-red-900/50 text-red-300 rounded-full text-xs">
+          Failed
+        </span>
+      );
+    }
+    
+    if (test.tokens_per_second < 12) {
+      return (
+        <span className="px-2 py-0.5 bg-amber-900/50 text-amber-300 rounded-full text-xs">
+          Below threshold
+        </span>
+      );
+    }
+    
+    return (
+      <span className="px-2 py-0.5 bg-green-900/50 text-green-300 rounded-full text-xs">
+        Good
+      </span>
+    );
   };
 
   return (
@@ -211,13 +222,13 @@ const AutoBenchmark: React.FC = () => {
         </div>
         
         <div>
-          <label className="block text-sm mb-1">Max Tokens per Request</label>
+          <label className="block text-sm mb-1">Description (Optional)</label>
           <input
-            type="number"
-            value={maxTokens}
-            onChange={(e) => setMaxTokens(Number(e.target.value))}
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
             className="w-full bg-gray-700 rounded p-2"
-            min={1}
+            placeholder="Benchmark description for your reference"
             disabled={isRunning}
           />
         </div>
@@ -230,7 +241,7 @@ const AutoBenchmark: React.FC = () => {
               className="flex items-center bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg disabled:opacity-50"
             >
               <PlayCircle className="mr-2" size={18} />
-              Start Stress Test
+              Start Auto-Benchmark
             </button>
           ) : (
             <button
@@ -238,109 +249,240 @@ const AutoBenchmark: React.FC = () => {
               className="flex items-center bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg"
             >
               <StopCircle className="mr-2" size={18} />
-              Stop Test (Step {currentStep})
+              Stop Benchmark
             </button>
           )}
         </div>
       </div>
       
-      {results.length > 0 && (
+      {/* Status and Progress Display */}
+      {isRunning && benchmarkStatus && (
+        <div className="p-4 bg-blue-900/30 border border-blue-800 rounded-lg mb-6">
+          <h3 className="font-medium mb-2">Benchmark In Progress</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-gray-300">Model:</span>
+              <span className="font-medium">{benchmarkStatus.current_results.model_id}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Status:</span>
+              <span className="font-medium capitalize">{benchmarkStatus.current_results.status}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-300">Tests completed:</span>
+              <span className="font-medium">{benchmarkStatus.current_results.tests.length}</span>
+            </div>
+          </div>
+          <div className="mt-3">
+            <p className="text-sm text-gray-300">
+              Testing different configurations to find the optimal settings for your hardware.
+              This process may take several minutes. You can stop it at any time.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* View selectors for test results */}
+      {(benchmarkStatus?.current_results?.tests?.length > 0 || chartData.length > 0) && (
+        <div className="mb-4">
+          <div className="flex space-x-2">
+            <button
+              onClick={() => setSelectedView('throughput')}
+              className={`px-3 py-1 rounded text-sm ${
+                selectedView === 'throughput' ? 'bg-green-600' : 'bg-gray-700'
+              }`}
+            >
+              Throughput
+            </button>
+            <button
+              onClick={() => setSelectedView('latency')}
+              className={`px-3 py-1 rounded text-sm ${
+                selectedView === 'latency' ? 'bg-green-600' : 'bg-gray-700'
+              }`}
+            >
+              Latency
+            </button>
+            <button
+              onClick={() => setSelectedView('comparison')}
+              className={`px-3 py-1 rounded text-sm ${
+                selectedView === 'comparison' ? 'bg-green-600' : 'bg-gray-700'
+              }`}
+            >
+              Streaming vs Batch
+            </button>
+          </div>
+        </div>
+      )}
+      
+      {/* Results Display */}
+      {chartData.length > 0 && (
         <div className="space-y-4">
           <div className="p-4 bg-gray-700 rounded-lg">
             <h3 className="font-medium mb-3">Test Results</h3>
             <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={results}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="concurrency" 
-                    label={{ value: 'Concurrency Level', position: 'insideBottom', offset: -5 }}
-                  />
-                  <YAxis 
-                    yAxisId="left" 
-                    label={{ value: 'Tokens/sec', angle: -90, position: 'insideLeft' }}
-                  />
-                  <YAxis 
-                    yAxisId="right" 
-                    orientation="right" 
-                    label={{ value: 'Latency (ms)', angle: 90, position: 'insideRight' }}
-                  />
-                  <Tooltip 
-                    formatter={(value) => [
-                      typeof value === 'number' ? value.toFixed(2) : value,
-                      ''
-                    ]}
-                  />
-                  <Legend />
-                  <Line 
-                    yAxisId="left"
-                    type="monotone" 
-                    dataKey="throughput" 
-                    name="Throughput (tok/s)" 
-                    stroke="#10B981" 
-                    activeDot={{ r: 8 }}
-                  />
-                  <Line 
-                    yAxisId="right"
-                    type="monotone" 
-                    dataKey="latency" 
-                    name="Latency (ms)" 
-                    stroke="#F59E0B" 
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {selectedView === 'throughput' && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="concurrency" 
+                      label={{ value: 'Concurrency Level', position: 'insideBottom', offset: -5 }}
+                    />
+                    <YAxis 
+                      label={{ value: 'Tokens/sec', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip 
+                      formatter={(value) => [
+                        typeof value === 'number' ? value.toFixed(2) : value,
+                        ''
+                      ]}
+                    />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="tokens_per_second" 
+                      name="Throughput (tok/s)" 
+                      stroke="#10B981" 
+                      activeDot={{ r: 8 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+              
+              {selectedView === 'latency' && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis 
+                      dataKey="concurrency" 
+                      label={{ value: 'Concurrency Level', position: 'insideBottom', offset: -5 }}
+                    />
+                    <YAxis 
+                      label={{ value: 'Latency (ms)', angle: -90, position: 'insideLeft' }}
+                    />
+                    <Tooltip 
+                      formatter={(value) => [
+                        typeof value === 'number' ? value.toFixed(2) : value,
+                        ''
+                      ]}
+                    />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="latency" 
+                      name="Latency (ms)" 
+                      stroke="#F59E0B" 
+                      activeDot={{ r: 8 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+              
+              {selectedView === 'comparison' && (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis label={{ value: 'Tokens/sec', angle: -90, position: 'insideLeft' }} />
+                    <Tooltip 
+                      formatter={(value) => [
+                        typeof value === 'number' ? value.toFixed(2) : value,
+                        ''
+                      ]}
+                    />
+                    <Legend />
+                    <Bar 
+                      dataKey="tokens_per_second" 
+                      name="Throughput" 
+                      fill="#10B981" 
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
           
-          {optimalConcurrency && optimalThroughput && (
+          {/* Optimal Configuration Display */}
+          {benchmarkStatus?.current_results?.optimal_config && (
             <div className="bg-blue-900/30 border border-blue-800 rounded-lg p-4">
               <div className="flex items-center mb-2">
                 <TrendingUp className="text-green-400 mr-2" size={20} />
                 <h3 className="font-medium">Optimal Configuration</h3>
               </div>
+              
               <div className="grid grid-cols-2 gap-4">
                 <div>
+                  <p className="text-gray-400 text-sm">Mode</p>
+                  <p className="text-xl font-semibold">
+                    {benchmarkStatus.current_results.optimal_config.streaming ? 'Streaming' : 'Batch'}
+                  </p>
+                </div>
+                <div>
                   <p className="text-gray-400 text-sm">Concurrency Level</p>
-                  <p className="text-xl font-semibold">{optimalConcurrency}</p>
+                  <p className="text-xl font-semibold">{benchmarkStatus.current_results.optimal_config.concurrency}</p>
+                </div>
+                {!benchmarkStatus.current_results.optimal_config.streaming && (
+                  <div>
+                    <p className="text-gray-400 text-sm">Batch Size</p>
+                    <p className="text-xl font-semibold">{benchmarkStatus.current_results.optimal_config.batch_size}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-gray-400 text-sm">Token Size</p>
+                  <p className="text-xl font-semibold">{benchmarkStatus.current_results.optimal_config.token_size}</p>
                 </div>
                 <div>
                   <p className="text-gray-400 text-sm">Peak Throughput</p>
-                  <p className="text-xl font-semibold">{formatNumber(optimalThroughput)} tokens/sec</p>
+                  <p className="text-xl font-semibold">{formatNumber(benchmarkStatus.current_results.optimal_config.tokens_per_second)} tokens/sec</p>
                 </div>
-                <div className="col-span-2">
-                  <p className="text-sm text-gray-300">
-                    This configuration provides the best balance of throughput and latency
-                    for your hardware with the selected model.
-                  </p>
+                <div>
+                  <p className="text-gray-400 text-sm">Latency</p>
+                  <p className="text-xl font-semibold">{formatNumber(benchmarkStatus.current_results.optimal_config.latency)} ms</p>
                 </div>
+              </div>
+              
+              <div className="mt-4 border-t border-blue-800 pt-3">
+                <p className="text-sm text-gray-300">
+                  This configuration provides the best balance of throughput and latency
+                  for your hardware with the selected model. The recommended settings are
+                  optimal for production deployments.
+                </p>
               </div>
             </div>
           )}
           
+          {/* Test Details Table */}
           <div className="bg-gray-700 rounded-lg p-4">
-            <h3 className="font-medium mb-2">Detailed Results</h3>
+            <h3 className="font-medium mb-2">Detailed Test Results</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-600">
-                    <th className="text-left p-2">Step</th>
+                    <th className="text-left p-2">Mode</th>
                     <th className="text-left p-2">Concurrency</th>
-                    <th className="text-left p-2">Throughput (tok/s)</th>
-                    <th className="text-left p-2">Latency (ms)</th>
+                    <th className="text-left p-2">Batch Size</th>
+                    <th className="text-left p-2">Token Size</th>
+                    <th className="text-left p-2">Throughput</th>
+                    <th className="text-left p-2">Latency</th>
+                    <th className="text-left p-2">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {results.map((result, index) => (
-                    <tr key={index} className="border-b border-gray-800">
-                      <td className="p-2">{index + 1}</td>
-                      <td className="p-2">{result.concurrency}</td>
+                  {benchmarkStatus?.current_results?.tests?.map((test, index) => (
+                    <tr key={index} className="border-b border-gray-800 hover:bg-gray-600">
+                      <td className="p-2">{test.streaming ? 'Streaming' : 'Batch'}</td>
+                      <td className="p-2">{test.concurrency}</td>
+                      <td className="p-2">{test.batch_size}</td>
+                      <td className="p-2">{test.token_size}</td>
                       <td className="p-2">
-                        {formatNumber(result.throughput)}
-                        {result.throughput < MINIMUM_TPS_THRESHOLD && (
-                          <span className="ml-2 text-red-400">⚠️</span>
-                        )}
+                        {test.error ? 'N/A' : `${formatNumber(test.tokens_per_second)} tok/s`}
                       </td>
-                      <td className="p-2">{formatNumber(result.latency)}</td>
+                      <td className="p-2">
+                        {test.error ? 'N/A' : `${formatNumber(test.latency)} ms`}
+                      </td>
+                      <td className="p-2">
+                        {getTestStatusTag(test)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -350,10 +492,25 @@ const AutoBenchmark: React.FC = () => {
         </div>
       )}
       
-      <div className="mt-4 text-sm text-gray-400">
+      {(!benchmarkStatus || benchmarkStatus.current_results.tests.length === 0) && !isRunning && (
+        <div className="bg-gray-700 p-6 text-center rounded-lg">
+          <BarChart2 className="mx-auto mb-3 text-gray-400" size={40} />
+          <p className="text-lg mb-1">No benchmark data yet</p>
+          <p className="text-sm text-gray-400">
+            Start an auto-benchmark to find the optimal configuration for your model and hardware.
+          </p>
+        </div>
+      )}
+      
+      <div className="mt-6 text-sm text-gray-400">
         <p>
-          This test automatically finds the optimal concurrency level for your hardware by 
-          incrementally increasing load until performance drops below {MINIMUM_TPS_THRESHOLD} tokens/sec.
+          This automated test systematically evaluates different configurations to find the
+          optimal settings for running your model. It tests both streaming and batch modes
+          with various concurrency levels and batch sizes until it finds the best performance.
+        </p>
+        <p className="mt-2">
+          Performance is measured in tokens per second (throughput) and latency (milliseconds).
+          The test identifies the configuration that provides the best balance.
         </p>
       </div>
     </div>
