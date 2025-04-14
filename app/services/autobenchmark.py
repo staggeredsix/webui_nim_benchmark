@@ -1,4 +1,4 @@
-# app/services/autobenchmark.py
+# app/services/autobenchmark.py - Fixed version
 import asyncio
 import time
 import json
@@ -36,9 +36,11 @@ class AutoBenchmarkService:
         to find optimal settings for the model.
         """
         if self.is_running:
+            logger.warning("Auto-benchmark is already running")
             raise Exception("Auto-benchmark is already running")
         
         try:
+            logger.info(f"Starting auto-benchmark for model {model_id} with prompt: {base_prompt}")
             self.is_running = True
             self.should_stop = False
             self.current_results = {
@@ -54,13 +56,19 @@ class AutoBenchmarkService:
             batch_results = []
             
             # First, find the max token size this model can handle with basic settings
-            max_supported_tokens = await self._find_max_token_size(model_id, base_prompt)
+            try:
+                max_supported_tokens = await self._find_max_token_size(model_id, base_prompt)
+                logger.info(f"Maximum supported token size: {max_supported_tokens}")
+            except Exception as e:
+                logger.error(f"Error finding max token size: {str(e)}")
+                max_supported_tokens = 32  # Default conservatively if test fails
+            
             token_sizes = [size for size in self.TOKEN_SIZES if size <= max_supported_tokens]
             if not token_sizes:
                 token_sizes = [32]  # Fallback to smallest size
                 
             logger.info(f"Beginning auto-benchmark for model {model_id}")
-            logger.info(f"Maximum supported token size: {max_supported_tokens}")
+            logger.info(f"Using token sizes: {token_sizes}")
             
             # Test streaming mode (concurrency only)
             logger.info("Testing streaming mode...")
@@ -68,26 +76,45 @@ class AutoBenchmarkService:
                 if self.should_stop:
                     break
                     
-                result = await self._run_benchmark_test(
-                    model_id=model_id,
-                    prompt=base_prompt,
-                    concurrency=concurrency,
-                    streaming=True,
-                    batch_size=1,  # No batching in streaming mode
-                    token_size=token_sizes[0]  # Use smallest token size for comparison
-                )
-                
-                streaming_results.append(result)
-                self.current_results["tests"].append(result)
-                
-                # Stop increasing concurrency if performance drops below threshold
-                if result["tokens_per_second"] < self.MIN_ACCEPTABLE_TPS:
-                    logger.info(f"Streaming performance dropped below threshold at concurrency {concurrency}")
-                    break
+                try:
+                    logger.info(f"Testing streaming mode with concurrency {concurrency}")
+                    result = await self._run_benchmark_test(
+                        model_id=model_id,
+                        prompt=base_prompt,
+                        concurrency=concurrency,
+                        streaming=True,
+                        batch_size=1,  # No batching in streaming mode
+                        token_size=token_sizes[0]  # Use smallest token size for comparison
+                    )
                     
-                # Or if we've hit our max concurrency
-                if concurrency >= self.MAX_CONCURRENCY:
-                    break
+                    streaming_results.append(result)
+                    self.current_results["tests"].append(result)
+                    logger.info(f"Streaming test completed: {result['tokens_per_second']} tokens/sec")
+                    
+                    # Stop increasing concurrency if performance drops below threshold
+                    if result["tokens_per_second"] < self.MIN_ACCEPTABLE_TPS:
+                        logger.info(f"Streaming performance dropped below threshold at concurrency {concurrency}")
+                        break
+                        
+                    # Or if we've hit our max concurrency
+                    if concurrency >= self.MAX_CONCURRENCY:
+                        break
+                except Exception as e:
+                    logger.error(f"Error during streaming test with concurrency {concurrency}: {str(e)}")
+                    # Add error result to show in UI
+                    error_result = {
+                        "name": f"auto_{model_id}_c{concurrency}_streaming_error",
+                        "model_id": model_id,
+                        "concurrency": concurrency,
+                        "streaming": True,
+                        "batch_size": 1,
+                        "token_size": token_sizes[0],
+                        "error": str(e),
+                        "tokens_per_second": 0,
+                        "latency": 0,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    self.current_results["tests"].append(error_result)
             
             # Test batch mode with various batch sizes
             logger.info("Testing batch mode...")
@@ -99,26 +126,45 @@ class AutoBenchmarkService:
                 for batch_size in [b for b in self.BATCH_SIZES if b <= concurrency]:
                     if self.should_stop:
                         break
+                    
+                    try:
+                        logger.info(f"Testing batch mode with concurrency {concurrency}, batch size {batch_size}")
+                        result = await self._run_benchmark_test(
+                            model_id=model_id,
+                            prompt=base_prompt,
+                            concurrency=concurrency,
+                            streaming=False,
+                            batch_size=batch_size,
+                            token_size=token_sizes[0]  # Use smallest token size for comparison
+                        )
                         
-                    result = await self._run_benchmark_test(
-                        model_id=model_id,
-                        prompt=base_prompt,
-                        concurrency=concurrency,
-                        streaming=False,
-                        batch_size=batch_size,
-                        token_size=token_sizes[0]  # Use smallest token size for comparison
-                    )
-                    
-                    batch_results.append(result)
-                    self.current_results["tests"].append(result)
-                    
-                    # Stop if performance drops significantly
-                    if result["tokens_per_second"] < self.MIN_ACCEPTABLE_TPS:
-                        logger.info(f"Batch performance dropped below threshold at concurrency {concurrency}, batch size {batch_size}")
-                        break
+                        batch_results.append(result)
+                        self.current_results["tests"].append(result)
+                        logger.info(f"Batch test completed: {result['tokens_per_second']} tokens/sec")
+                        
+                        # Stop if performance drops significantly
+                        if result["tokens_per_second"] < self.MIN_ACCEPTABLE_TPS:
+                            logger.info(f"Batch performance dropped below threshold at concurrency {concurrency}, batch size {batch_size}")
+                            break
+                    except Exception as e:
+                        logger.error(f"Error during batch test with concurrency {concurrency}, batch size {batch_size}: {str(e)}")
+                        # Add error result to show in UI
+                        error_result = {
+                            "name": f"auto_{model_id}_c{concurrency}_b{batch_size}_error",
+                            "model_id": model_id,
+                            "concurrency": concurrency,
+                            "streaming": False,
+                            "batch_size": batch_size,
+                            "token_size": token_sizes[0],
+                            "error": str(e),
+                            "tokens_per_second": 0,
+                            "latency": 0,
+                            "timestamp": datetime.now().isoformat()
+                        }
+                        self.current_results["tests"].append(error_result)
                 
                 # Stop increasing concurrency if all batch sizes are below threshold
-                if all(r["tokens_per_second"] < self.MIN_ACCEPTABLE_TPS for r in batch_results if r["concurrency"] == concurrency):
+                if all(r["tokens_per_second"] < self.MIN_ACCEPTABLE_TPS for r in batch_results if r["concurrency"] == concurrency and "error" not in r):
                     break
                     
                 # Or if we've hit our max concurrency
@@ -137,17 +183,36 @@ class AutoBenchmarkService:
                     for token_size in [t for t in token_sizes if t > token_sizes[0]]:
                         if self.should_stop:
                             break
-                            
-                        result = await self._run_benchmark_test(
-                            model_id=model_id,
-                            prompt=base_prompt,
-                            concurrency=best_config["concurrency"],
-                            streaming=best_config["streaming"],
-                            batch_size=best_config["batch_size"],
-                            token_size=token_size
-                        )
                         
-                        self.current_results["tests"].append(result)
+                        try:
+                            logger.info(f"Testing optimal config with token size {token_size}")
+                            result = await self._run_benchmark_test(
+                                model_id=model_id,
+                                prompt=base_prompt,
+                                concurrency=best_config["concurrency"],
+                                streaming=best_config["streaming"],
+                                batch_size=best_config["batch_size"],
+                                token_size=token_size
+                            )
+                            
+                            self.current_results["tests"].append(result)
+                            logger.info(f"Token size test completed: {result['tokens_per_second']} tokens/sec")
+                        except Exception as e:
+                            logger.error(f"Error during token size test with size {token_size}: {str(e)}")
+                            # Add error result to show in UI
+                            error_result = {
+                                "name": f"auto_{model_id}_token{token_size}_error",
+                                "model_id": model_id,
+                                "concurrency": best_config["concurrency"],
+                                "streaming": best_config["streaming"],
+                                "batch_size": best_config["batch_size"],
+                                "token_size": token_size,
+                                "error": str(e),
+                                "tokens_per_second": 0,
+                                "latency": 0,
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            self.current_results["tests"].append(error_result)
             
             # Find the optimal configuration
             self.current_results["optimal_config"] = self._find_best_config(self.current_results["tests"])
@@ -157,24 +222,29 @@ class AutoBenchmarkService:
             self._save_results()
             
             logger.info(f"Auto-benchmark completed for model {model_id}")
-            logger.info(f"Optimal configuration: {self.current_results['optimal_config']}")
+            if self.current_results["optimal_config"]:
+                logger.info(f"Optimal configuration: {self.current_results['optimal_config']}")
+            else:
+                logger.warning("No optimal configuration found")
             
             return self.current_results
             
         except Exception as e:
-            logger.error(f"Auto-benchmark error: {str(e)}")
+            logger.error(f"Auto-benchmark error: {str(e)}", exc_info=True)
             self.current_results["status"] = "error"
             self.current_results["error"] = str(e)
+            self._save_results()  # Save even if there's an error
             return self.current_results
         finally:
             self.is_running = False
 
     async def _find_max_token_size(self, model_id: str, prompt: str) -> int:
         """Test to find the maximum token size the model can handle."""
-        test_sizes = [2048, 1024, 512, 256, 128, 64]
+        test_sizes = [512, 256, 128, 64, 32]
         
         for size in test_sizes:
             try:
+                logger.info(f"Testing max token size: {size}")
                 # Simple test with minimal settings
                 result = await self._run_benchmark_test(
                     model_id=model_id,
@@ -204,7 +274,7 @@ class AutoBenchmarkService:
         streaming: bool,
         batch_size: int,
         token_size: int,
-        total_requests: int = 20
+        total_requests: int = 10  # Reduced for quicker tests
     ) -> Dict[str, Any]:
         """Run a single benchmark test with the given configuration."""
         try:
@@ -219,15 +289,25 @@ class AutoBenchmarkService:
                 "batch_size": batch_size if not streaming else 1,
             }
             
-            logger.info(f"Running test: {config['name']}")
+            logger.info(f"Running test: {config['name']} with config: {config}")
             
             # Reset metrics collector to get clean measurements
             metrics_collector.reset_peaks()
             
+            # Get model info first
+            model_info = await ollama_manager.get_model_info(model_id)
+            if not model_info:
+                raise Exception(f"Model {model_id} not found")
+                
             # Run the benchmark
             start_time = time.time()
-            test_result = await benchmark_service.execute_benchmark(config, {"name": model_id})
+            test_result = await benchmark_service.execute_benchmark(config, model_info)
             duration = time.time() - start_time
+            
+            if not test_result:
+                raise Exception("Benchmark execution returned no results")
+                
+            logger.info(f"Benchmark executed successfully: {test_result}")
             
             # Format the results
             result = {
@@ -253,18 +333,9 @@ class AutoBenchmarkService:
             return result
             
         except Exception as e:
-            logger.error(f"Benchmark test error: {str(e)}")
-            return {
-                "name": f"auto_{model_id}_c{concurrency}_b{batch_size}_t{token_size}_{'stream' if streaming else 'batch'}",
-                "model_id": model_id,
-                "concurrency": concurrency,
-                "streaming": streaming,
-                "batch_size": batch_size,
-                "token_size": token_size,
-                "error": str(e),
-                "tokens_per_second": 0,
-                "timestamp": datetime.now().isoformat()
-            }
+            logger.error(f"Benchmark test error: {str(e)}", exc_info=True)
+            # Re-raise to propagate the error
+            raise
 
     def _find_best_config(self, tests: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Find the optimal configuration based on throughput, latency and stability."""
@@ -322,36 +393,35 @@ class AutoBenchmarkService:
             "is_running": self.is_running,
             "current_results": self.current_results
         }
-
-
-def get_history(self) -> List[Dict[str, Any]]:
-    """Get the history of auto-benchmark runs with improved error handling."""
-    try:
-        history = []
-        # Create the results directory if it doesn't exist
-        self.results_dir.mkdir(exist_ok=True)
-        
-        for file_path in sorted(self.results_dir.glob("autobenchmark_*.json"), reverse=True):
-            try:
-                with open(file_path, "r") as f:
-                    data = json.load(f)
-                    # Ensure tests is always defined as an array
-                    if "tests" not in data:
-                        data["tests"] = []
-                    history.append(data)
-            except json.JSONDecodeError:
-                logger.error(f"Error reading auto-benchmark file: {file_path}")
-                continue
-            except Exception as e:
-                logger.error(f"Unexpected error reading {file_path}: {str(e)}")
-                continue
-                
-        # Ensure we return at least an empty array rather than None
-        return history if history else []
-    except Exception as e:
-        logger.error(f"Error reading auto-benchmark history: {e}")
-        # Return an empty array instead of None
-        return []
+    
+    def get_history(self) -> List[Dict[str, Any]]:
+        """Get the history of auto-benchmark runs with improved error handling."""
+        try:
+            history = []
+            # Create the results directory if it doesn't exist
+            self.results_dir.mkdir(exist_ok=True)
+            
+            for file_path in sorted(self.results_dir.glob("autobenchmark_*.json"), reverse=True):
+                try:
+                    with open(file_path, "r") as f:
+                        data = json.load(f)
+                        # Ensure tests is always defined as an array
+                        if "tests" not in data:
+                            data["tests"] = []
+                        history.append(data)
+                except json.JSONDecodeError:
+                    logger.error(f"Error reading auto-benchmark file: {file_path}")
+                    continue
+                except Exception as e:
+                    logger.error(f"Unexpected error reading {file_path}: {str(e)}")
+                    continue
+                    
+            # Ensure we return at least an empty array rather than None
+            return history if history else []
+        except Exception as e:
+            logger.error(f"Error reading auto-benchmark history: {e}")
+            # Return an empty array instead of None
+            return []
 
 # Create a singleton instance
 auto_benchmark_service = AutoBenchmarkService()
