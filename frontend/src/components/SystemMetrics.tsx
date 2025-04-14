@@ -14,7 +14,7 @@ const SystemMetrics: React.FC<SystemMetricsProps> = ({ metrics }) => {
           <div key={`gpu-${index}`} className="bg-gray-800 p-4 rounded">
             <h3 className="font-medium mb-2">GPU {index}</h3>
             <p>Utilization: {gpuMetric.gpu_utilization}%</p>
-            <p>Memory: {gpuMetric.gpu_memory_used}GB / {gpuMetric.gpu_memory_total}GB</p>
+            <p>Memory: {gpuMetric.gpu_memory_used}MB / {gpuMetric.gpu_memory_total}GB</p>
             <p>Temperature: {gpuMetric.gpu_temp}°C</p>
           </div>
         ))}
