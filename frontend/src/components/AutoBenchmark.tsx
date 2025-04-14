@@ -4,10 +4,10 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
          BarChart, Bar, ScatterChart, Scatter, ZAxis } from 'recharts';
 import { getModels, startAutoBenchmark, stopAutoBenchmark, getAutoBenchmarkStatus, getAutoBenchmarkHistory } from '@/services/api';
 import { formatNumber } from '@/utils/format';
+import { getChartDataFromResults } from '@/utils/chartHelpers'; // Fixed import from utils instead of types
 import type { OllamaModel } from '@/types/model';
 import type { AutoBenchmarkRequest, AutoBenchmarkStatus, AutoBenchmarkResults, 
-              BenchmarkTestResult, AutoBenchmarkChartData,
-              getChartDataFromResults } from '@/types/autobenchmark';
+              BenchmarkTestResult, AutoBenchmarkChartData } from '@/types/autobenchmark';
 
 const POLL_INTERVAL = 3000; // Poll for status updates every 3 seconds
 
