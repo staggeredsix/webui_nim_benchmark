@@ -323,21 +323,35 @@ class AutoBenchmarkService:
             "current_results": self.current_results
         }
 
-    def get_history(self) -> List[Dict[str, Any]]:
-        """Get the history of auto-benchmark runs."""
-        try:
-            history = []
-            for file_path in sorted(self.results_dir.glob("autobenchmark_*.json"), reverse=True):
-                try:
-                    with open(file_path, "r") as f:
-                        history.append(json.load(f))
-                except json.JSONDecodeError:
-                    logger.error(f"Error reading auto-benchmark file: {file_path}")
-                    continue
-            return history
-        except Exception as e:
-            logger.error(f"Error reading auto-benchmark history: {e}")
-            return []
+
+def get_history(self) -> List[Dict[str, Any]]:
+    """Get the history of auto-benchmark runs with improved error handling."""
+    try:
+        history = []
+        # Create the results directory if it doesn't exist
+        self.results_dir.mkdir(exist_ok=True)
+        
+        for file_path in sorted(self.results_dir.glob("autobenchmark_*.json"), reverse=True):
+            try:
+                with open(file_path, "r") as f:
+                    data = json.load(f)
+                    # Ensure tests is always defined as an array
+                    if "tests" not in data:
+                        data["tests"] = []
+                    history.append(data)
+            except json.JSONDecodeError:
+                logger.error(f"Error reading auto-benchmark file: {file_path}")
+                continue
+            except Exception as e:
+                logger.error(f"Unexpected error reading {file_path}: {str(e)}")
+                continue
+                
+        # Ensure we return at least an empty array rather than None
+        return history if history else []
+    except Exception as e:
+        logger.error(f"Error reading auto-benchmark history: {e}")
+        # Return an empty array instead of None
+        return []
 
 # Create a singleton instance
 auto_benchmark_service = AutoBenchmarkService()
