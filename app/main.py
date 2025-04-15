@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.websockets import WebSocketState
 from pathlib import Path
 import asyncio
+import queue
 
 from .api.routes import api_router
 from .utils.metrics import collect_metrics, metrics_collector
