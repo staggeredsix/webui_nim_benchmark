@@ -127,6 +127,15 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#1F2937', border: 'none' }}
                   labelFormatter={(val) => new Date(val).toLocaleString()}
+                  formatter={(value, name) => {
+                    if (name === 'Tokens/s') {
+                      return [`${value.toFixed(2)} tokens/s`, name];
+                    }
+                    if (name === 'Model-only TPS') {
+                      return [`${value.toFixed(2)} tokens/s`, name];
+                    }
+                    return [value, name];
+                  }}
                 />
                 <Legend />
                 <Line 
@@ -173,6 +182,12 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                 <Tooltip 
                   contentStyle={{ backgroundColor: '#1F2937', border: 'none' }}
                   labelFormatter={(val) => new Date(val).toLocaleString()}
+                  formatter={(value, name) => {
+                    if (name === 'Avg Latency' || name === 'P95 Latency' || name === 'Time to First Token') {
+                      return [`${value.toFixed(2)} ms`, name];
+                    }
+                    return [value, name];
+                  }}
                 />
                 <Legend />
                 <Line 
@@ -222,6 +237,12 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                     />
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#1F2937', border: 'none' }}
+                      formatter={(value, name) => {
+                        if (name === 'Tokens/s') {
+                          return [`${value.toFixed(2)} tokens/s`, name];
+                        }
+                        return [value, name];
+                      }}
                     />
                     <Legend />
                     <Bar 
@@ -245,6 +266,12 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                     />
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#1F2937', border: 'none' }}
+                      formatter={(value, name) => {
+                        if (name === 'TTFT (ms)') {
+                          return [`${value.toFixed(2)} ms`, name];
+                        }
+                        return [value, name];
+                      }}
                     />
                     <Legend />
                     <Bar 
