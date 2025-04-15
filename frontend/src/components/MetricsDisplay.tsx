@@ -1,5 +1,3 @@
-// src/components/MetricsDisplay.tsx
-
 import React, { useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { formatBytes, formatNumber } from '@/utils/format';
@@ -14,12 +12,10 @@ interface GPUMetric {
   power_draw: number;
 }
 
-// Updated to include all the properties we're using
 interface HistoricalMetric {
   timestamp: string;
   tokens_per_second: number;
   latency: number;
-  // Add the missing properties
   model_name?: string;
   streaming_enabled?: boolean;
   batch_size?: number;
@@ -41,6 +37,14 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
   // Helper function to convert MB to GB with proper formatting
   const formatMemory = (mb: number): string => {
     return `${formatNumber(mb / 1024, 2)} MB`;
+  };
+  
+  // Helper function to format tooltip values
+  const formatTooltipValue = (value: string | number | Array<any> | undefined, unit: string): string => {
+    if (typeof value === 'number') {
+      return `${value.toFixed(2)} ${unit}`;
+    }
+    return `${value} ${unit}`;
   };
   
   // Group benchmarks by stream vs batch for comparison
@@ -129,10 +133,10 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                   labelFormatter={(val) => new Date(val).toLocaleString()}
                   formatter={(value, name) => {
                     if (name === 'Tokens/s') {
-                      return [`${value.toFixed(2)} tokens/s`, name];
+                      return [formatTooltipValue(value, 'tokens/s'), name];
                     }
                     if (name === 'Model-only TPS') {
-                      return [`${value.toFixed(2)} tokens/s`, name];
+                      return [formatTooltipValue(value, 'tokens/s'), name];
                     }
                     return [value, name];
                   }}
@@ -184,7 +188,7 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                   labelFormatter={(val) => new Date(val).toLocaleString()}
                   formatter={(value, name) => {
                     if (name === 'Avg Latency' || name === 'P95 Latency' || name === 'Time to First Token') {
-                      return [`${value.toFixed(2)} ms`, name];
+                      return [formatTooltipValue(value, 'ms'), name];
                     }
                     return [value, name];
                   }}
@@ -239,7 +243,7 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                       contentStyle={{ backgroundColor: '#1F2937', border: 'none' }}
                       formatter={(value, name) => {
                         if (name === 'Tokens/s') {
-                          return [`${value.toFixed(2)} tokens/s`, name];
+                          return [formatTooltipValue(value, 'tokens/s'), name];
                         }
                         return [value, name];
                       }}
@@ -268,7 +272,7 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
                       contentStyle={{ backgroundColor: '#1F2937', border: 'none' }}
                       formatter={(value, name) => {
                         if (name === 'TTFT (ms)') {
-                          return [`${value.toFixed(2)} ms`, name];
+                          return [formatTooltipValue(value, 'ms'), name];
                         }
                         return [value, name];
                       }}
