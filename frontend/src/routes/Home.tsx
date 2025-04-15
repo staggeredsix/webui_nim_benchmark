@@ -45,7 +45,7 @@ const Home: React.FC = () => {
               <div key={index} className="p-4 bg-gray-800 rounded-lg">
                 <h3 className="text-sm font-medium mb-2">GPU {index}</h3>
                 <p>Utilization: {gpu?.gpu_utilization?.toFixed(1) || '0.0'}%</p>
-                <p>Memory: {(gpu?.gpu_memory_used || 0).toFixed(1)}GB</p>
+                <p>Memory: {(gpu?.gpu_memory_used || 0).toFixed(1)}MB</p>
                 <p>Temperature: {gpu?.gpu_temp?.toFixed(0) || '0'}°C</p>
                 <p>Power: {gpu?.power_draw?.toFixed(1) || '0.0'}W</p>
               </div>
