@@ -43,20 +43,41 @@ async def add_logging(request: Request, call_next):
     return response
 
 
-# Updated WebSocket endpoint in main.py
 @app.websocket("/ws/metrics")
 async def metrics_websocket(websocket: WebSocket):
     await connection_manager.connect(websocket)
     try:
+        # Start the metrics collector if not already running
+        if not metrics_collector.collector_thread or not metrics_collector.collector_thread.is_alive():
+            metrics_collector.start_collector()
+            
         while True:
-            metrics = metrics_collector.collect_metrics()
-            await websocket.send_json({
-                "type": "metrics_update",
-                "metrics": metrics
-            })
-            await asyncio.sleep(.25)
+            try:
+                # Get metrics from the queue (non-blocking)
+                try:
+                    # Wait for up to 1 second for new metrics
+                    metrics = metrics_collector.metrics_queue.get(timeout=1)
+                except queue.Empty:
+                    # If no new metrics, collect them now
+                    metrics = metrics_collector.collect_metrics()
+                    
+                # Add peak metrics
+                peaks = metrics_collector.get_peaks()
+                metrics.update(peaks)
+                
+                await websocket.send_json({
+                    "type": "metrics_update",
+                    "metrics": metrics
+                })
+                
+                await asyncio.sleep(0.25)  # Throttle updates to 4 per second
+                
+            except Exception as e:
+                logger.error(f"Error in metrics websocket: {e}")
+                await asyncio.sleep(1)  # Wait before retrying on error
+                
     except Exception as e:
-        print(f"WebSocket error: {e}")
+        logger.error(f"WebSocket error: {e}")
     finally:
         await connection_manager.disconnect(websocket)
 
