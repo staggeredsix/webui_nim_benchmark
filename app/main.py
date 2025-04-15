@@ -54,6 +54,11 @@ async def metrics_websocket(websocket: WebSocket):
             
         while True:
             try:
+                # Check if websocket is still connected before proceeding
+                if websocket.client_state == WebSocketState.DISCONNECTED:
+                    logger.info("Client disconnected, stopping metrics updates")
+                    break
+                
                 # Get metrics from the queue (non-blocking)
                 try:
                     # Wait for up to 1 second for new metrics
@@ -66,21 +71,32 @@ async def metrics_websocket(websocket: WebSocket):
                 peaks = metrics_collector.get_peaks()
                 metrics.update(peaks)
                 
-                await websocket.send_json({
-                    "type": "metrics_update",
-                    "metrics": metrics
-                })
+                # Check again before sending data
+                if websocket.client_state != WebSocketState.DISCONNECTED:
+                    await websocket.send_json({
+                        "type": "metrics_update",
+                        "metrics": metrics
+                    })
+                else:
+                    logger.info("Client disconnected before sending metrics, stopping")
+                    break
                 
                 await asyncio.sleep(0.25)  # Throttle updates to 4 per second
                 
             except Exception as e:
                 logger.error(f"Error in metrics websocket: {e}")
-                await asyncio.sleep(1)  # Wait before retrying on error
+                # If this is a WebSocket state error, break out of the loop
+                if "close message has been sent" in str(e) or "Connection closed" in str(e):
+                    logger.info("WebSocket connection closed, exiting metrics loop")
+                    break
+                await asyncio.sleep(1)  # Wait before retrying on other errors
                 
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
     finally:
+        # Make sure to clean up the connection
         await connection_manager.disconnect(websocket)
+        logger.info("Metrics WebSocket connection closed and cleaned up")
 
 # WebSocket endpoint for benchmark progress
 @app.websocket("/ws/benchmark")
