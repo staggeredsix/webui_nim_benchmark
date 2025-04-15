@@ -20,6 +20,8 @@ class BenchmarkService:
         try:
             model_name = model_info['name']
             logger.info(f"Starting benchmark for {model_name}")
+            logger.info(f"Model info: {model_info}")
+            logger.info(f"Benchmark config: {config}")
 
             # Reset metrics collector and start in background thread
             metrics_collector.reset_peaks()
@@ -78,90 +80,104 @@ class BenchmarkService:
                             logger.debug(f"Sending request with settings: {data}")
                             
                             async with aiohttp.ClientSession() as session:
-                                async with session.post(
-                                    f"{ollama_manager.base_url}/api/generate",
-                                    json=data,
-                                    timeout=120  # Longer timeout for generation
-                                ) as response:
-                                    if response.status != 200:
-                                        logger.error(f"Request failed with status {response.status}")
-                                        return
+                                try:
+                                    async with session.post(
+                                        f"{ollama_manager.base_url}/api/generate",
+                                        json=data,
+                                        timeout=120  # Longer timeout for generation
+                                    ) as response:
+                                        if response.status != 200:
+                                            error_text = await response.text()
+                                            logger.error(f"Request failed with status {response.status}: {error_text}")
+                                            return
 
-                                    if use_streaming:
-                                        # Handle streaming response with accurate token counting
-                                        tokens = 0
-                                        token_timestamps = []
-                                        
-                                        async for line in response.content:
-                                            try:
-                                                chunk = json.loads(line)
-                                                # Record first token timestamp
-                                                if not first_token_time and chunk.get('response'):
-                                                    first_token_time = datetime.now()
-                                                    ttft = (first_token_time - req_start).total_seconds() * 1000
-                                                    ttfts.append(ttft)
-                                                
-                                                # Record token timestamp for inter-token latency
-                                                if chunk.get('response'):
-                                                    token_timestamps.append(datetime.now())
-                                                
-                                                # Use eval_count from streaming chunks if available
-                                                if 'eval_count' in chunk:
-                                                    tokens = chunk.get('eval_count', 0)
-                                                    # Record tokens for metrics collector
-                                                    if tokens > 0:
-                                                        metrics_collector.record_tokens(tokens)
-                                                elif chunk.get('response'):
-                                                    # Only count new tokens as they appear
-                                                    tokens += 1
-                                                    metrics_collector.record_tokens(1)
-                                            except json.JSONDecodeError:
-                                                continue
-                                        
-                                        # Calculate inter-token latency if we have multiple tokens
-                                        if len(token_timestamps) > 1:
-                                            intervals = [(token_timestamps[i] - token_timestamps[i-1]).total_seconds() * 1000 
-                                                        for i in range(1, len(token_timestamps))]
-                                            if intervals:
-                                                inter_token_latencies.append(sum(intervals) / len(intervals))
-                                        
-                                        # For streaming, latency = total time from request to completion
-                                        latency = (datetime.now() - req_start).total_seconds() * 1000  # Total response time in ms
-                                    else:
-                                        # Handle non-streaming response
-                                        data = await response.json()
-                                        
-                                        # Use Ollama's eval_count for accurate token count
-                                        if 'eval_count' in data:
-                                            tokens = data['eval_count']
-                                            # Record tokens for metrics collector
-                                            metrics_collector.record_tokens(tokens)
+                                        if use_streaming:
+                                            # Handle streaming response with accurate token counting
+                                            tokens = 0
+                                            token_timestamps = []
                                             
-                                            # Update model performance metrics if available
-                                            if 'eval_duration' in data:
-                                                # Convert from nanoseconds to seconds
-                                                eval_duration_sec = data['eval_duration'] / 1_000_000_000
-                                                tokens_per_sec = tokens / eval_duration_sec if eval_duration_sec > 0 else 0
-                                                model_tokens_per_second = max(model_tokens_per_second, tokens_per_sec)
-                                                model_tokens_generated += tokens
+                                            async for line in response.content:
+                                                try:
+                                                    chunk = json.loads(line)
+                                                    # Record first token timestamp
+                                                    if not first_token_time and chunk.get('response'):
+                                                        first_token_time = datetime.now()
+                                                        ttft = (first_token_time - req_start).total_seconds() * 1000
+                                                        ttfts.append(ttft)
+                                                    
+                                                    # Record token timestamp for inter-token latency
+                                                    if chunk.get('response'):
+                                                        token_timestamps.append(datetime.now())
+                                                    
+                                                    # Use eval_count from streaming chunks if available
+                                                    if 'eval_count' in chunk:
+                                                        tokens = chunk.get('eval_count', 0)
+                                                        # Record tokens for metrics collector
+                                                        if tokens > 0:
+                                                            metrics_collector.record_tokens(tokens)
+                                                    elif chunk.get('response'):
+                                                        # Only count new tokens as they appear
+                                                        tokens += 1
+                                                        metrics_collector.record_tokens(1)
+                                                except json.JSONDecodeError as e:
+                                                    logger.error(f"JSON decode error in streaming chunk: {str(e)}")
+                                                    continue
+                                            
+                                            # Calculate inter-token latency if we have multiple tokens
+                                            if len(token_timestamps) > 1:
+                                                intervals = [(token_timestamps[i] - token_timestamps[i-1]).total_seconds() * 1000 
+                                                            for i in range(1, len(token_timestamps))]
+                                                if intervals:
+                                                    inter_token_latencies.append(sum(intervals) / len(intervals))
+                                            
+                                            # For streaming, latency = total time from request to completion
+                                            latency = (datetime.now() - req_start).total_seconds() * 1000  # Total response time in ms
                                         else:
-                                            # Fallback to text-based counting
-                                            tokens = len(data.get('response', '').split())
-                                            metrics_collector.record_tokens(tokens)
+                                            # Handle non-streaming response
+                                            data = await response.json()
+                                            
+                                            # Use Ollama's eval_count for accurate token count
+                                            if 'eval_count' in data:
+                                                tokens = data['eval_count']
+                                                # Record tokens for metrics collector
+                                                metrics_collector.record_tokens(tokens)
+                                                
+                                                # Update model performance metrics if available
+                                                if 'eval_duration' in data:
+                                                    # Convert from nanoseconds to seconds
+                                                    eval_duration_sec = data['eval_duration'] / 1_000_000_000
+                                                    tokens_per_sec = tokens / eval_duration_sec if eval_duration_sec > 0 else 0
+                                                    model_tokens_per_second = max(model_tokens_per_second, tokens_per_sec)
+                                                    model_tokens_generated += tokens
+                                            else:
+                                                # Fallback to text-based counting
+                                                tokens = len(data.get('response', '').split())
+                                                metrics_collector.record_tokens(tokens)
 
-                                        # For non-streaming, time to first token is essentially request latency
-                                        ttfts.append((datetime.now() - req_start).total_seconds() * 1000)
+                                            # For non-streaming, time to first token is essentially request latency
+                                            ttfts.append((datetime.now() - req_start).total_seconds() * 1000)
+                                            
+                                            # For non-streaming, measure full response latency
+                                            latency = (datetime.now() - req_start).total_seconds() * 1000  # ms
+
+                                        success_count += 1
+                                        total_tokens += tokens
+                                        total_latency += latency
+                                        latencies.append(latency)
                                         
-                                        # For non-streaming, measure full response latency
-                                        latency = (datetime.now() - req_start).total_seconds() * 1000  # ms
+                                        logger.debug(f"Request succeeded: {tokens} tokens, {latency:.2f}ms latency")
+                                
+                                except aiohttp.ClientError as e:
+                                    logger.error(f"HTTP request error: {type(e).__name__} - {str(e)}")
+                                except aiohttp.ServerTimeoutError:
+                                    logger.error("Request timed out after 120 seconds")
+                                except Exception as e:
+                                    logger.error(f"Request processing error: {type(e).__name__} - {str(e)}")
 
-                                    success_count += 1
-                                    total_tokens += tokens
-                                    total_latency += latency
-                                    latencies.append(latency)
-
+                        except json.JSONDecodeError as e:
+                            logger.error(f"JSON decode error: {str(e)}")
                         except Exception as e:
-                            logger.error(f"Request error: {str(e)}")
+                            logger.error(f"Request error: {type(e).__name__} - {str(e)}", exc_info=True)
 
                 # Run the benchmark requests
                 if not use_streaming and batch_size > 1:
@@ -181,6 +197,7 @@ class BenchmarkService:
                     await asyncio.gather(*tasks)
 
                 if not latencies:
+                    logger.error(f"No successful requests completed for model {model_name}")
                     raise Exception("No successful requests completed")
 
                 # Process GPU metrics
