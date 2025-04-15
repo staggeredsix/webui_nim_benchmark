@@ -124,6 +124,9 @@ class BenchmarkService:
                                                         for i in range(1, len(token_timestamps))]
                                             if intervals:
                                                 inter_token_latencies.append(sum(intervals) / len(intervals))
+                                        
+                                        # For streaming, latency = total time from request to completion
+                                        latency = (datetime.now() - req_start).total_seconds() * 1000  # Total response time in ms
                                     else:
                                         # Handle non-streaming response
                                         data = await response.json()
@@ -148,8 +151,10 @@ class BenchmarkService:
 
                                         # For non-streaming, time to first token is essentially request latency
                                         ttfts.append((datetime.now() - req_start).total_seconds() * 1000)
+                                        
+                                        # For non-streaming, measure full response latency
+                                        latency = (datetime.now() - req_start).total_seconds() * 1000  # ms
 
-                                    latency = (datetime.now() - req_start).total_seconds() * 1000  # Convert to ms
                                     success_count += 1
                                     total_tokens += tokens
                                     total_latency += latency
@@ -213,7 +218,9 @@ class BenchmarkService:
                     "gpu_metrics": gpu_metrics_snapshot,
                     "total_tokens": total_tokens,
                     "peak_gpu_utilization": peak_metrics["peak_gpu_util"],
-                    "peak_gpu_memory": peak_metrics["peak_gpu_mem"],
+                    # Explicitly include memory in MB to ensure correct display
+                    "peak_gpu_memory": peak_metrics["peak_gpu_mem"],  # Already in MB in metrics_collector
+                    "peak_gpu_memory_mb": peak_metrics["peak_gpu_mem"],  # Explicit MB version for UI
                     "successful_requests": success_count,
                     "failed_requests": config['total_requests'] - success_count,
                     "model_name": model_name,
