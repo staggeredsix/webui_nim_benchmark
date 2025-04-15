@@ -40,7 +40,7 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({ benchmarkHistory, curre
   
   // Helper function to convert MB to GB with proper formatting
   const formatMemory = (mb: number): string => {
-    return `${formatNumber(mb / 1024, 2)} GB`;
+    return `${formatNumber(mb / 1024, 2)} MB`;
   };
   
   // Group benchmarks by stream vs batch for comparison
