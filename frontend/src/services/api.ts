@@ -30,10 +30,55 @@ export const fetchBenchmarkHistory = async (): Promise<BenchmarkRun[]> => {
   return response.data;
 };
 
-// Models API
-export const getModels = async (): Promise<OllamaModel[]> => {
+// API Key Management
+export const saveApiKey = async (keyType: 'ngc' | 'huggingface', key: string): Promise<{ status: string }> => {
   try {
-    const response = await axios.get(`${BASE_URL}/api/models`);
+    const response = await axios.post(`${BASE_URL}/api/api-keys/${keyType}`, { key });
+    return response.data;
+  } catch (error) {
+    console.error(`Error saving ${keyType} key:`, error);
+    throw error;
+  }
+};
+
+export const getApiKey = async (keyType: 'ngc' | 'huggingface'): Promise<{ exists: boolean }> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/api/api-keys/${keyType}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error retrieving ${keyType} key:`, error);
+    throw error;
+  }
+};
+
+export const getAllApiKeys = async (): Promise<{ ngc: boolean; huggingface: boolean }> => {
+  try {
+    const response = await axios.get(`${BASE_URL}/api/api-keys`);
+    return response.data;
+  } catch (error) {
+    console.error("Error retrieving API keys:", error);
+    throw error;
+  }
+};
+
+export const deleteApiKey = async (keyType: 'ngc' | 'huggingface'): Promise<{ status: string }> => {
+  try {
+    const response = await axios.delete(`${BASE_URL}/api/api-keys/${keyType}`);
+    return response.data;
+  } catch (error) {
+    console.error(`Error deleting ${keyType} key:`, error);
+    throw error;
+  }
+};
+
+// Models API - Common
+export const getModels = async (backend?: 'ollama' | 'vllm' | 'nim'): Promise<any[]> => {
+  try {
+    let url = `${BASE_URL}/api/models`;
+    if (backend) {
+      url += `?backend=${backend}`;
+    }
+    const response = await axios.get(url);
     return response.data;
   } catch (error) {
     console.error("Error fetching models:", error);
@@ -41,60 +86,81 @@ export const getModels = async (): Promise<OllamaModel[]> => {
   }
 };
 
-// Note: searchModels function is now deprecated but kept for backward compatibility
-// The UI now uses the direct Ollama Library URL instead
-export const searchModels = async (query: string = ""): Promise<OllamaModel[]> => {
+// Ollama-specific APIs
+export const pullOllamaModel = async (name: string): Promise<{ status: string; model: string }> => {
   try {
-    // This will return an empty array since we're bypassing the search to use the direct Ollama Library URL
-    return [];
-  } catch (error) {
-    console.error("Error searching models:", error);
-    return [];
-  }
-};
-
-export const pullModel = async (name: string): Promise<{ status: string; model: string }> => {
-  try {
-    const response = await axios.post(`${BASE_URL}/api/models/pull`, { name });
+    const response = await axios.post(`${BASE_URL}/api/models/pull`, { name, backend: 'ollama' });
     return response.data;
   } catch (error) {
-    console.error("Error pulling model:", error);
+    console.error("Error pulling Ollama model:", error);
     throw error;
   }
 };
 
-export const deleteModel = async (modelName: string): Promise<{ status: string; model: string }> => {
+export const deleteOllamaModel = async (modelName: string): Promise<{ status: string; model: string }> => {
   try {
-    const response = await axios.delete(`${BASE_URL}/api/models/${modelName}`);
+    const response = await axios.delete(`${BASE_URL}/api/models/${modelName}?backend=ollama`);
     return response.data;
   } catch (error) {
-    console.error("Error deleting model:", error);
+    console.error("Error deleting Ollama model:", error);
     throw error;
   }
 };
 
-export const getModelInfo = async (modelName: string): Promise<OllamaModelInfo> => {
+export const getOllamaModelHealth = async (modelName: string): Promise<ModelHealth> => {
   try {
-    const response = await axios.get(`${BASE_URL}/api/models/${modelName}`);
+    const response = await axios.get(`${BASE_URL}/api/models/${modelName}/health?backend=ollama`);
     return response.data;
   } catch (error) {
-    console.error("Error getting model info:", error);
+    console.error("Error checking Ollama model health:", error);
     throw error;
   }
 };
 
-export const getModelHealth = async (modelName: string): Promise<ModelHealth> => {
+// vLLM-specific APIs
+export const pullVllmModel = async (model: string): Promise<{ status: string; model: string }> => {
   try {
-    const response = await axios.get(`${BASE_URL}/api/models/${modelName}/health`);
+    const response = await axios.post(`${BASE_URL}/api/vllm/pull`, { model });
     return response.data;
   } catch (error) {
-    console.error("Error checking model health:", error);
+    console.error("Error loading vLLM model:", error);
+    throw error;
+  }
+};
+
+export const deleteVllmModel = async (modelName: string): Promise<{ status: string; model: string }> => {
+  try {
+    const response = await axios.delete(`${BASE_URL}/api/models/${modelName}?backend=vllm`);
+    return response.data;
+  } catch (error) {
+    console.error("Error deleting vLLM model:", error);
+    throw error;
+  }
+};
+
+// NIM-specific APIs
+export const pullNimModel = async (model: string): Promise<{ status: string; model: string }> => {
+  try {
+    const response = await axios.post(`${BASE_URL}/api/nim/pull`, { model });
+    return response.data;
+  } catch (error) {
+    console.error("Error pulling NIM model:", error);
+    throw error;
+  }
+};
+
+export const deleteNimModel = async (modelName: string): Promise<{ status: string; model: string }> => {
+  try {
+    const response = await axios.delete(`${BASE_URL}/api/models/${modelName}?backend=nim`);
+    return response.data;
+  } catch (error) {
+    console.error("Error deleting NIM model:", error);
     throw error;
   }
 };
 
 // Auto-Benchmark API Functions
-export const startAutoBenchmark = async (request: AutoBenchmarkRequest): Promise<{status: string; message: string}> => {
+export const startAutoBenchmark = async (request: AutoBenchmarkRequest & { backend: string }): Promise<{status: string; message: string}> => {
   try {
     const response = await axios.post(`${BASE_URL}/api/autobenchmark/start`, request);
     return response.data;
@@ -158,42 +224,20 @@ export const saveLogs = async (containerId: string, filename: string): Promise<v
   }
 };
 
-// NGC Key Management APIs
-export const saveNgcKey = async (key: string): Promise<{ status: string }> => {
-  try {
-    const response = await axios.post(`${BASE_URL}/api/ngc-key`, { key });
-    return response.data;
-  } catch (error) {
-    console.error("Error saving NGC key:", error);
-    throw error;
-  }
-};
-
-export const getNgcKey = async (): Promise<{ exists: boolean }> => {
-  try {
-    const response = await axios.get(`${BASE_URL}/api/ngc-key`);
-    return response.data;
-  } catch (error) {
-    console.error("Error retrieving NGC key:", error);
-    throw error;
-  }
-};
-
-export const deleteNgcKey = async (): Promise<{ status: string }> => {
-  try {
-    const response = await axios.delete(`${BASE_URL}/api/ngc-key`);
-    return response.data;
-  } catch (error) {
-    console.error("Error deleting NGC key:", error);
-    throw error;
-  }
-};
-
 // WebSocket connection for live logs
-export const createLogStream = (logId: string, onMessage: (log: string) => void) => {
-  const ws = new WebSocket(`${WS_BASE}/ws/logs/${logId}`);
+export const createLogStream = (containerId: string, onMessage: (log: string) => void) => {
+  const ws = new WebSocket(`${WS_BASE}/ws/logs/${containerId}`);
   ws.onmessage = (event) => {
     onMessage(JSON.parse(event.data).log);
+  };
+  return ws;
+};
+
+// WebSocket connection for benchmark progress
+export const createBenchmarkStream = (onMessage: (data: any) => void) => {
+  const ws = new WebSocket(`${WS_BASE}/ws/benchmark`);
+  ws.onmessage = (event) => {
+    onMessage(JSON.parse(event.data));
   };
   return ws;
 };
