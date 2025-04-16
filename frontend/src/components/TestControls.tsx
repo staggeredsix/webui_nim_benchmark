@@ -38,10 +38,11 @@ const TestControls = () => {
       setBackends(backendStatus);
       
       // If current tab is not available, switch to first available
-      if (!backendStatus[activeTab]) {
+      if (!backendStatus[activeTab] && activeTab !== 'auto') {
         if (backendStatus.ollama) setActiveTab('ollama');
         else if (backendStatus.vllm) setActiveTab('vllm');
         else if (backendStatus.nim) setActiveTab('nim');
+        else setActiveTab('auto'); // Auto benchmark is always available
       }
     } catch (err) {
       console.error("Error checking backend status:", err);
@@ -85,6 +86,20 @@ const TestControls = () => {
     }
   };
 
+  // Get color class for each backend
+  const getBackendColor = (backend: 'ollama' | 'vllm' | 'nim' | 'auto') => {
+    switch (backend) {
+      case 'ollama':
+        return "border-green-500";
+      case 'vllm':
+        return "border-blue-500";
+      case 'nim':
+        return "border-purple-500";
+      case 'auto':
+        return "border-yellow-500";
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Run a Benchmark</h1>
@@ -103,7 +118,7 @@ const TestControls = () => {
             onClick={() => setActiveTab('ollama')}
             className={`px-4 py-2 rounded-t-lg flex items-center whitespace-nowrap ${
               activeTab === 'ollama' 
-                ? 'bg-gray-800 text-white border-b-2 border-green-500' 
+                ? `bg-gray-800 text-white border-b-2 ${getBackendColor('ollama')}` 
                 : 'bg-gray-900 text-gray-400 hover:text-white'
             }`}
           >
@@ -117,7 +132,7 @@ const TestControls = () => {
             onClick={() => setActiveTab('vllm')}
             className={`px-4 py-2 rounded-t-lg flex items-center whitespace-nowrap ${
               activeTab === 'vllm' 
-                ? 'bg-gray-800 text-white border-b-2 border-blue-500' 
+                ? `bg-gray-800 text-white border-b-2 ${getBackendColor('vllm')}` 
                 : 'bg-gray-900 text-gray-400 hover:text-white'
             }`}
           >
@@ -131,7 +146,7 @@ const TestControls = () => {
             onClick={() => setActiveTab('nim')}
             className={`px-4 py-2 rounded-t-lg flex items-center whitespace-nowrap ${
               activeTab === 'nim' 
-                ? 'bg-gray-800 text-white border-b-2 border-purple-500' 
+                ? `bg-gray-800 text-white border-b-2 ${getBackendColor('nim')}` 
                 : 'bg-gray-900 text-gray-400 hover:text-white'
             }`}
           >
@@ -144,7 +159,7 @@ const TestControls = () => {
           onClick={() => setActiveTab('auto')}
           className={`px-4 py-2 rounded-t-lg flex items-center whitespace-nowrap ${
             activeTab === 'auto' 
-              ? 'bg-gray-800 text-white border-b-2 border-yellow-500' 
+              ? `bg-gray-800 text-white border-b-2 ${getBackendColor('auto')}` 
               : 'bg-gray-900 text-gray-400 hover:text-white'
           }`}
         >
