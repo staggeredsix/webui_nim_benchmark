@@ -31,13 +31,9 @@ const TestControls = () => {
 
   const checkBackendStatus = async () => {
     try {
-      // This is a placeholder. In a real implementation, 
-      // you would have an endpoint to check which backends are available
-      const backendStatus = {
-        ollama: true,
-        vllm: true,
-        nim: true
-      };
+      // Get status of each backend
+      const response = await fetch(`http://${window.location.hostname}:7000/api/status`);
+      const backendStatus = await response.json();
       
       setBackends(backendStatus);
       
