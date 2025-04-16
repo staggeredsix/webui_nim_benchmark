@@ -1,71 +1,76 @@
-# File: app/api/endpoints/benchmark.py
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from sqlalchemy.orm import Session
-from datetime import datetime
-import json
-from typing import Dict, Any
-from ...models.database import get_db
-from ...models.benchmark import BenchmarkRun
-from ...services.container import ContainerManager
-from ...utils.logger import logger
+# app/api/endpoints/benchmark_endpoint.py
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
+from enum import Enum
+
+# Correct import path
+from app.services.benchmark import benchmark_service
 
 router = APIRouter()
-container_manager = ContainerManager()
 
-@router.post("/benchmark")
-async def create_benchmark(config: Dict[str, Any], db: Session = Depends(get_db)):
-   try:
-       nim_id = config.pop('nim_id', None)
-       if not nim_id:
-           raise HTTPException(status_code=400, detail="NIM ID is required")
-           
-       nim = next((n for n in container_manager.list_containers() if n['container_id'] == nim_id), None)
-       if not nim:
-           raise HTTPException(status_code=404, detail="Selected NIM not found")
+class BackendType(str, Enum):
+    OLLAMA = "ollama"
+    VLLM = "vllm"
+    NIM = "nim"
 
-       benchmark_config = BenchmarkConfig(
-           total_requests=config.get('totalRequests', 100),
-           concurrency_level=config.get('concurrencyLevel', 10),
-           max_tokens=config.get('maxTokens', 100),
-           prompt=config.get('prompt', '')
-       )
+class BenchmarkConfig(BaseModel):
+    total_requests: int = Field(..., gt=0, description="Total number of requests to send")
+    concurrency_level: int = Field(..., gt=0, description="Number of concurrent requests")
+    max_tokens: Optional[int] = Field(None, gt=0, description="Maximum number of tokens per request")
+    prompt: str = Field(..., min_length=1, description="Prompt template for the benchmark")
+    name: str = Field(..., min_length=1, description="Name of the benchmark")
+    description: Optional[str] = Field(None, description="Optional description of the benchmark")
+    backend: BackendType = Field(BackendType.OLLAMA, description="Backend to use for the benchmark")
+    
+    # Backend-specific fields
+    model_id: Optional[str] = Field(None, description="ID of the model for Ollama or vLLM backends")
+    nim_id: Optional[str] = Field(None, description="ID of the NIM container to use")
+    
+    # Advanced settings
+    stream: Optional[bool] = Field(False, description="Whether to use streaming mode")
+    batch_size: Optional[int] = Field(1, gt=0, description="Batch size for non-streaming requests")
+    temperature: Optional[float] = Field(0.7, ge=0.0, le=1.0, description="Temperature for generation")
+    top_p: Optional[float] = Field(0.9, ge=0.0, le=1.0, description="Top-p sampling parameter")
+    top_k: Optional[int] = Field(40, ge=0, description="Top-k sampling parameter")
+    context_size: Optional[str] = Field("auto", description="Context window size (auto or number)")
+    gpu_count: Optional[int] = Field(1, ge=1, description="Number of GPUs to use (NIM only)")
+    
+    class Config:
+        use_enum_values = True
 
-       run = BenchmarkRun(
-           model_name=config.get('prompt', ''),
-           config=json.dumps(config),
-           status="running"
-       )
-       db.add(run)
-       db.commit()
-       db.refresh(run)
-
-       executor = BenchmarkExecutor(nim['url'], nim['image_name'], benchmark_config)
-       asyncio.create_task(executor.run_benchmark())
-       
-       return {"run_id": run.id}
-   except Exception as e:
-       logger.error(f"Failed to start benchmark: {e}")
-       raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/benchmark/history")
-def get_benchmark_history(db: Session = Depends(get_db)):
+@router.post("/")
+async def create_benchmark(config: BenchmarkConfig):
     try:
-        runs = db.query(BenchmarkRun).order_by(BenchmarkRun.start_time.desc()).all()
-        return [format_benchmark_run(run) for run in runs]
+        # Validate backend-specific parameters
+        if config.backend == BackendType.OLLAMA and not config.model_id:
+            raise HTTPException(status_code=400, detail="'model_id' is required for Ollama benchmarks")
+        elif config.backend == BackendType.VLLM and not config.model_id:
+            raise HTTPException(status_code=400, detail="'model_id' is required for vLLM benchmarks")
+        elif config.backend == BackendType.NIM and not config.nim_id:
+            raise HTTPException(status_code=400, detail="'nim_id' is required for NIM benchmarks")
+            
+        run = await benchmark_service.create_benchmark(config.dict())
+        return {"run_id": run["id"], "name": run["name"]}
     except Exception as e:
-        logger.error(f"Failed to get benchmark history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-def format_benchmark_run(run: BenchmarkRun):
-    return {
-        "id": run.id,
-        "model_name": run.model_name,
-        "status": run.status,
-        "start_time": run.start_time.isoformat(),
-        "end_time": run.end_time.isoformat() if run.end_time else None,
-        "metrics": {
-            "average_tps": run.average_tps,
-            "peak_tps": run.peak_tps,
-            "p95_latency": run.p95_latency
-        }
-    }
+@router.get("/history")
+def get_benchmark_history():
+    return benchmark_service.get_benchmark_history()
+
+@router.get("/history/{backend}")
+def get_backend_benchmark_history(backend: BackendType):
+    try:
+        all_history = benchmark_service.get_benchmark_history()
+        filtered_history = [run for run in all_history if run.get("backend", "ollama") == backend]
+        return filtered_history
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{run_id}")
+def get_benchmark(run_id: int):
+    run = benchmark_service.get_benchmark(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Benchmark run not found")
+    return run
