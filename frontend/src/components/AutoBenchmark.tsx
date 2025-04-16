@@ -1,20 +1,21 @@
-// Fixed AutoBenchmark.tsx
 import React, { useState, useEffect, useRef } from 'react';
-import { AlertCircle, PlayCircle, StopCircle, TrendingUp, Gauge, BarChart2, Check } from 'lucide-react';
+import { AlertCircle, PlayCircle, StopCircle, TrendingUp, Gauge, BarChart2, Check, Server, Database, Cloud } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
          BarChart, Bar, ScatterChart, Scatter, ZAxis } from 'recharts';
 import { getModels, startAutoBenchmark, stopAutoBenchmark, getAutoBenchmarkStatus, getAutoBenchmarkHistory } from '@/services/api';
 import { formatNumber } from '@/utils/format';
 import { getChartDataFromResults } from '@/utils/chartHelpers';
 import type { OllamaModel } from '@/types/model';
+import type { BackendModel } from '@/types/backend';
 import type { AutoBenchmarkRequest, AutoBenchmarkStatus, AutoBenchmarkResults, 
               BenchmarkTestResult, AutoBenchmarkChartData } from '@/types/autobenchmark';
 
 const POLL_INTERVAL = 3000; // Poll for status updates every 3 seconds
 
 const AutoBenchmark: React.FC = () => {
-  const [models, setModels] = useState<OllamaModel[]>([]);
+  const [models, setModels] = useState<BackendModel[]>([]);
   const [selectedModel, setSelectedModel] = useState<string>('');
+  const [selectedBackend, setSelectedBackend] = useState<'ollama' | 'vllm' | 'nim'>('ollama');
   const [prompt, setPrompt] = useState('Write a short paragraph about artificial intelligence.');
   const [description, setDescription] = useState('');
   
@@ -26,8 +27,15 @@ const AutoBenchmark: React.FC = () => {
   const [chartData, setChartData] = useState<AutoBenchmarkChartData[]>([]);
   const [selectedView, setSelectedView] = useState<'throughput' | 'latency' | 'comparison'>('throughput');
 
+  const [backends, setBackends] = useState<Record<string, boolean>>({
+    ollama: true,
+    vllm: false,
+    nim: false
+  });
+
   // Automatically poll for updates when a benchmark is running
   useEffect(() => {
+    checkBackends();
     loadModels();
     checkStatus();
     loadHistory();
@@ -38,6 +46,11 @@ const AutoBenchmark: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    // When backend changes, reload models
+    loadModels();
+  }, [selectedBackend]);
 
   useEffect(() => {
     // Convert benchmark results to chart data, with proper null checking
@@ -51,15 +64,33 @@ const AutoBenchmark: React.FC = () => {
     }
   }, [benchmarkStatus]);
 
+  const checkBackends = async () => {
+    try {
+      // Get status of each backend
+      const response = await fetch(`http://${window.location.hostname}:7000/api/status`);
+      const backendStatus = await response.json();
+      
+      setBackends(backendStatus);
+      
+      // Set first available backend as selected
+      if (backendStatus.ollama) setSelectedBackend('ollama');
+      else if (backendStatus.vllm) setSelectedBackend('vllm');
+      else if (backendStatus.nim) setSelectedBackend('nim');
+    } catch (err) {
+      console.error("Error checking backend status:", err);
+      setError("Failed to connect to backend services.");
+    }
+  };
+
   const loadModels = async () => {
     try {
-      const modelList = await getModels();
+      const modelList = await getModels(selectedBackend);
       setModels(modelList || []);
       if (modelList?.length > 0 && !selectedModel) {
         setSelectedModel(modelList[0].name);
       }
     } catch (err) {
-      setError('Failed to load models. Make sure Ollama is running.');
+      setError(`Failed to load ${selectedBackend} models. Make sure the service is running.`);
       console.error(err);
     }
   };
@@ -171,10 +202,11 @@ const AutoBenchmark: React.FC = () => {
     try {
       setError(null);
       
-      const request: AutoBenchmarkRequest = {
+      const request: AutoBenchmarkRequest & { backend: string } = {
         model_id: selectedModel,
         prompt,
-        description
+        description,
+        backend: selectedBackend
       };
       
       const response = await startAutoBenchmark(request);
@@ -196,6 +228,18 @@ const AutoBenchmark: React.FC = () => {
     } catch (err) {
       console.error('Error stopping auto-benchmark:', err);
       setError(err instanceof Error ? err.message : 'An error occurred stopping the benchmark');
+    }
+  };
+
+  // Get backend icon
+  const getBackendIcon = (backend: 'ollama' | 'vllm' | 'nim') => {
+    switch (backend) {
+      case 'ollama':
+        return <Server className="w-5 h-5 text-green-500 mr-2" />;
+      case 'vllm':
+        return <Database className="w-5 h-5 text-blue-500 mr-2" />;
+      case 'nim':
+        return <Cloud className="w-5 h-5 text-purple-500 mr-2" />;
     }
   };
 
@@ -253,6 +297,55 @@ const AutoBenchmark: React.FC = () => {
       )}
       
       <div className="space-y-4 mb-6">
+        {/* Backend selector */}
+        <div>
+          <label className="block text-sm mb-1">Select Backend</label>
+          <div className="flex space-x-2 bg-gray-700 p-1 rounded-lg">
+            {backends.ollama && (
+              <button
+                onClick={() => setSelectedBackend('ollama')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 rounded ${
+                  selectedBackend === 'ollama' 
+                    ? 'bg-green-900/70 text-green-300' 
+                    : 'bg-transparent text-gray-400 hover:text-white'
+                }`}
+                disabled={isRunning}
+              >
+                <Server size={16} className="mr-2" />
+                Ollama
+              </button>
+            )}
+            {backends.vllm && (
+              <button
+                onClick={() => setSelectedBackend('vllm')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 rounded ${
+                  selectedBackend === 'vllm' 
+                    ? 'bg-blue-900/70 text-blue-300' 
+                    : 'bg-transparent text-gray-400 hover:text-white'
+                }`}
+                disabled={isRunning}
+              >
+                <Database size={16} className="mr-2" />
+                vLLM
+              </button>
+            )}
+            {backends.nim && (
+              <button
+                onClick={() => setSelectedBackend('nim')}
+                className={`flex-1 flex items-center justify-center px-3 py-2 rounded ${
+                  selectedBackend === 'nim' 
+                    ? 'bg-purple-900/70 text-purple-300' 
+                    : 'bg-transparent text-gray-400 hover:text-white'
+                }`}
+                disabled={isRunning}
+              >
+                <Cloud size={16} className="mr-2" />
+                NVIDIA NIM
+              </button>
+            )}
+          </div>
+        </div>
+        
         <div>
           <label className="block text-sm mb-1">Select Model</label>
           <select
