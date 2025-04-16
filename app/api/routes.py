@@ -8,8 +8,7 @@ from app.utils.logger import logger
 from .endpoints.benchmark_endpoint import router as benchmark_router
 from .endpoints.models import router as models_router 
 from .endpoints.logs import router as logs_router
-from .endpoints.ngc import router as ngc_router
-from .endpoints.huggingface import router as huggingface_router
+from .endpoints.api_keys import router as api_keys_router
 from .endpoints.nim import router as nim_router
 from .endpoints.vllm import router as vllm_router
 from .endpoints.autobenchmark import router as autobenchmark_router
@@ -29,8 +28,7 @@ api_router.include_router(benchmark_router, prefix="/benchmark", tags=["benchmar
 api_router.include_router(models_router, prefix="/models", tags=["models"])
 api_router.include_router(logs_router, prefix="/logs", tags=["logs"])
 api_router.include_router(metrics_router, prefix="/metrics", tags=["metrics"])
-api_router.include_router(ngc_router, prefix="/ngc-key", tags=["ngc"])
-api_router.include_router(huggingface_router, prefix="/hf-key", tags=["huggingface"])
+api_router.include_router(api_keys_router, prefix="/api-keys", tags=["api-keys"])
 api_router.include_router(nim_router, prefix="/nim", tags=["nim"])
 api_router.include_router(vllm_router, prefix="/vllm", tags=["vllm"])
 api_router.include_router(autobenchmark_router, prefix="/autobenchmark", tags=["autobenchmark"])
